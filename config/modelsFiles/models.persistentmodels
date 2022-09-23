@@ -1,0 +1,36 @@
+-- | Workspace that has Slacklinker installed
+Workspace sql=workspaces
+  Id UUID default=uuid_generate_v1mc()
+  -- | e.g. "jadeapptesting"
+  slackSubdomain Text
+  -- | T0000000 format
+  slackTeamId TeamId
+  slackOauthToken SlackToken
+
+  UniqueWorkspaceSlackId slackTeamId sql=workspaces_slack_id_key
+
+  deriving Show Eq Generic
+
+JoinedChannel sql=joined_channels
+  Id UUID default=uuid_generate_v1mc()
+  workspaceId WorkspaceId
+  channelId ConversationId
+  UniqueJoinedChannel workspaceId channelId sql=joined_channels_workspace_channel_key
+
+-- | Message that we've sent
+SentMessage sql=sent_messages
+  Id UUID default=uuid_generate_v1mc()
+  workspaceId WorkspaceId
+  messageId MessageId
+  -- | always present since we only reply to things
+  threadTs Text
+  channelId ConversationId
+
+-- | \"state\" parameters we have given to Slack
+Nonce sql=nonces
+  Id UUID default=uuid_generate_v1mc()
+  -- | Value, totally random bytes
+  nonceValue ByteString
+  UniqueNonceValue nonceValue sql=nonces_nonce_value_key
+  -- | When it can be deleted (Slack doesn't give us more than 10min for the flow)
+  expiresAt UTCTime

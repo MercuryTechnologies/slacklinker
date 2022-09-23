@@ -1,0 +1,25 @@
+cradle:
+  cabal:
+    - path: "././app/Main.hs"
+      component: "slacklinker:exe:slacklinker"
+
+    - path: "././Paths_slacklinker.hs"
+      component: "slacklinker:exe:slacklinker"
+
+    - path: "./test"
+      component: "slacklinker:test:test"
+
+    # - path: "./slack-web/src"
+    #   component: "slacklinker:test:test-dev"
+
+    - path: "./src"
+      component: "lib:slacklinker"
+
+    - path: "slack-web/src"
+      component: "lib:slack-web"
+
+    - path: "slack-web/tests"
+      component: "slack-web:test:tests"
+
+    - path: "slack-web/main/cli.hs"
+      component: "slack-web:exe:slack-web-cli"

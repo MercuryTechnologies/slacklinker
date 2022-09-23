@@ -1,0 +1,78 @@
+{
+  "nodes": {
+    "flake-utils": {
+      "locked": {
+        "lastModified": 1659877975,
+        "narHash": "sha256-zllb8aq3YO3h8B/U0/J1WBgAL8EX5yWf5pMj3G0NAmc=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "c0e246b9b83f637f4681389ecabcb2681b4f3af0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "mono-traversable": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1652787287,
+        "narHash": "sha256-XgDtoSc+QRsRqJA+hPGQ3VfttLWGtA4vwvXnUUNH6NA=",
+        "owner": "snoyberg",
+        "repo": "mono-traversable",
+        "rev": "28bb773905bf9cd17e42f85eda4e872a27717579",
+        "type": "github"
+      },
+      "original": {
+        "owner": "snoyberg",
+        "repo": "mono-traversable",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1663761423,
+        "narHash": "sha256-bDLXl2BVq7eIQz/8CduZI1SLyhG9u/CrckHd6f7bwPE=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "d6490a0bd9dfb298fcd8382d3363b86870dc7340",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "mono-traversable": "mono-traversable",
+        "nixpkgs": "nixpkgs",
+        "slack-web": "slack-web"
+      }
+    },
+    "slack-web": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1664904226,
+        "narHash": "sha256-Sl40K6krZplPKss/+kaYef4BeVirDIazUwhWTV40O2U=",
+        "owner": "mercurytechnologies",
+        "repo": "slack-web",
+        "rev": "395cf1fc7b860112e9382e51b0371ea3e5cb990e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "mercurytechnologies",
+        "ref": "jadel/slacklinker",
+        "repo": "slack-web",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
