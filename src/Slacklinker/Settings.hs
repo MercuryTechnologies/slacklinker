@@ -4,9 +4,9 @@ module Slacklinker.Settings
   )
 where
 
-import Database.Persist (PersistUniqueWrite (upsertBy))
+import Data.Aeson (Value)
+import Database.Persist (PersistUniqueWrite (upsertBy), getBy)
 import Database.Persist.Sql ((=.))
-import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.PersistImport
 import Slacklinker.Settings.Types
@@ -19,3 +19,17 @@ setSetting setting = do
       (UniqueSettingTag tag)
       (Setting {tag, content = JSONB content})
       [SettingContent =. JSONB content]
+
+settingDefaultByTag :: SlacklinkerSettingTag -> Value
+settingDefaultByTag AllowRegistration = toJSON True
+settingDefaultByTag RequireMutualTLS = toJSON False
+
+getSetting :: MonadIO m => SlacklinkerSettingTag -> SqlPersistT m SlacklinkerSetting
+getSetting tag = do
+  mSettingE <- getBy (UniqueSettingTag tag)
+  let settingVal =
+        maybe
+          (settingDefaultByTag tag)
+          (unJSONB . (.content) . entityVal)
+          mSettingE
+  fromEither . mapLeft AesonDecodeError $ unmarshalSetting tag settingVal

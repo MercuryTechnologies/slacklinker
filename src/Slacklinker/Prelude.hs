@@ -9,6 +9,7 @@ module Slacklinker.Prelude
     module Data.Proxy,
     module Database.Persist.Sql,
     module Data.Default.Class,
+    module Database.Persist,
     cs,
   )
 where
@@ -24,3 +25,4 @@ import Data.String.Conversions (cs)
 import Database.Persist.Sql (SqlPersistT)
 import Servant (FromHttpApiData (..), ToHttpApiData (..))
 import Servant.Server (Handler)
+import Database.Persist (Entity(..))

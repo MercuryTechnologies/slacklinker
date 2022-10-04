@@ -5,11 +5,13 @@ import Crypto.Random.Entropy (getEntropy)
 import Data.ByteString.Base64.URL qualified as B64
 import Data.Time
 import Database.Persist
+import Safe (fromJustNote)
 import Slacklinker.App (App (..), AppConfig (..), AppM, getApp, runDB)
 import Slacklinker.Exceptions
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Sender (runSlack)
+import Slacklinker.Settings
 import Slacklinker.Slack.OAuth
 import Slacklinker.Slack.TeamInfo
 import URI.ByteString
@@ -62,8 +64,23 @@ getAndSaveState = do
     insert_ $ Nonce {nonceValue = entropy, expiresAt = (secondsToNominalDiffTime $ 10 * 60) `addUTCTime` now}
   pure . B64.encode $ entropy
 
+getAllowRegistration :: AppM Bool
+getAllowRegistration = do
+  s <- runDB $ getSetting AllowRegistration
+  -- FIXME(jadel): this API is terrible
+  let allowRegistration = fromJustNote "impossible" $ do
+        (SettingAllowRegistration v) <- pure s
+        pure v
+  pure allowRegistration
+
 getAuthorizeR :: AppM Text
 getAuthorizeR = do
+  allowRegistration <- getAllowRegistration
+
+  -- FIXME(jadel): this doesn't let us get new scopes for existing workspaces
+  -- when registration is disabled, but that's probably fine.
+  unless allowRegistration $ throwIO RegistrationDisabled
+
   clientId <- cs . (.config.slackClientId) <$> getApp
 
   state <- getAndSaveState
@@ -73,6 +90,12 @@ getAuthorizeR = do
 
 getOauthRedirectR :: Text -> Text -> AppM Text
 getOauthRedirectR code state = do
+  allowRegistration <- getAllowRegistration
+
+  -- FIXME(jadel): this doesn't let us get new scopes for existing workspaces
+  -- when registration is disabled, but that's probably fine.
+  unless allowRegistration $ throwIO RegistrationDisabled
+
   decoded <- fromEither . mapLeft BadBase64 $ B64.decode . cs $ state
   now <- liftIO getCurrentTime
   mNonceE <- runDB $ do

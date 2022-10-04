@@ -4,18 +4,13 @@
 -}
 module Slacklinker.Exceptions where
 
-import Data.Aeson
 import Data.Data (cast)
-import Data.Text qualified as T
 import Data.Text.IO (hPutStrLn)
 import Network.HTTP.Types
 import Network.Wai (Middleware, responseLBS)
 import Slacklinker.Prelude
 import UnliftIO.Exception qualified as E
-import Web.Slack.Common (TeamId(..))
-
--- directly taken from servant-exceptions, which has a broken implementation of
--- their class. gross.
+import Web.Slack.Common (TeamId (..))
 
 -- | Response for some type of exception.
 class (Typeable e, Show e) => ExceptionResponse e where
@@ -34,7 +29,7 @@ class (Typeable e, Show e) => ExceptionResponse e where
 {- | ServantException does not work since they forgot to include the headers,
  so we define our own. Fun.
 -}
-data ServiceException = forall e. (Exception e, ToJSON e, ExceptionResponse e) => ServiceException e
+data ServiceException = forall e. (Exception e, ExceptionResponse e) => ServiceException e
   deriving anyclass (Exception)
 
 instance Show ServiceException where
@@ -45,7 +40,7 @@ instance ExceptionResponse ServiceException where
   message (ServiceException e) = message e
   headers (ServiceException e) = headers e
 
-toServiceException :: (Exception e, ToJSON e, ExceptionResponse e) => e -> SomeException
+toServiceException :: (Exception e, ExceptionResponse e) => e -> SomeException
 toServiceException = toException . ServiceException
 
 fromServiceException :: Exception e => SomeException -> Maybe e
@@ -56,25 +51,18 @@ newtype DeriveServiceException a = DeriveServiceException a
 instance Show e => Show (DeriveServiceException e) where
   showsPrec p (DeriveServiceException e) = showsPrec p e
 
-instance ToJSON e => ToJSON (DeriveServiceException e) where
-  toJSON (DeriveServiceException e) = toJSON e
-
 instance ExceptionResponse e => ExceptionResponse (DeriveServiceException e) where
   status (DeriveServiceException e) = status e
   message (DeriveServiceException e) = message e
   headers (DeriveServiceException e) = headers e
 
-instance (ToJSON a, ExceptionResponse a) => Exception (DeriveServiceException a) where
+instance (ExceptionResponse a) => Exception (DeriveServiceException a) where
   toException = toServiceException
   fromException = fromServiceException
 
 data Redirect302 = Redirect302 {location :: ByteString}
   deriving stock (Show)
   deriving (Exception) via DeriveServiceException Redirect302
-
--- FIXME(jadel): all these ToJSON instances seem very silly. we should obsolete them.
-instance ToJSON Redirect302 where
-  toJSON _ = "302 Redirect"
 
 instance ExceptionResponse Redirect302 where
   status _ = status302
@@ -84,13 +72,6 @@ instance ExceptionResponse Redirect302 where
 data AesonDecodeError = AesonDecodeError String
   deriving stock (Show)
   deriving (Exception) via DeriveServiceException AesonDecodeError
-
-instance ToJSON AesonDecodeError where
-  toJSON (AesonDecodeError err) =
-    object
-      [ "kind" .= ("AesonDecodeError" :: Text)
-      , "message" .= T.pack err
-      ]
 
 instance ExceptionResponse AesonDecodeError where
   status _ = status400
@@ -102,38 +83,25 @@ data BadBase64 = BadBase64 String
 instance ExceptionResponse BadBase64 where
   status _ = status400
 
-instance ToJSON BadBase64 where
-  toJSON (BadBase64 err) =
-    object
-      [ "kind" .= ("BadBase64" :: Text)
-      , "message" .= T.pack err
-      ]
-
 data BadNonce = BadNonce
   deriving stock (Show)
-  deriving Exception via DeriveServiceException BadNonce
+  deriving (Exception) via DeriveServiceException BadNonce
 
 instance ExceptionResponse BadNonce where
   status _ = status400
 
-instance ToJSON BadNonce where
-  toJSON _ =
-    object
-      [ "kind" .= ("BadNonce" :: Text)
-      ]
-
 data UnknownWorkspace = UnknownWorkspace TeamId
   deriving stock (Show)
-  deriving Exception via DeriveServiceException UnknownWorkspace
-
-instance ToJSON UnknownWorkspace where
-  toJSON (UnknownWorkspace (TeamId tid)) =
-    object
-      [ "kind" .= ("UnknownWorkspace" :: Text)
-      , "message" .= ("Workspace ID " <> tid <> " is unknown")
-      ]
+  deriving (Exception) via DeriveServiceException UnknownWorkspace
 
 instance ExceptionResponse UnknownWorkspace where
+  status _ = status400
+
+data RegistrationDisabled = RegistrationDisabled
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException RegistrationDisabled
+
+instance ExceptionResponse RegistrationDisabled where
   status _ = status400
 
 errorMiddleware :: Middleware
