@@ -3,7 +3,7 @@ module Slacklinker.Import
     taggedOptions,
     snakeCaseOptions,
     snakeCaseFormOptions,
-    AesonDecodeError,
+    AesonDecodeError(..),
     decodeThrow,
     orThrow,
     module Slacklinker.Tracing,

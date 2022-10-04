@@ -70,6 +70,8 @@
               ] ++ (with pkgs; [
                 ngrok
                 sqlite
+                refinery-cli
+                pgformatter # executable is called pg_format
               ]);
               # Change the prompt to show that you are in a devShell
               # shellHook = "export PS1='\\e[1;34mdev > \\e[0m'";

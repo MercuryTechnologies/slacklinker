@@ -11,7 +11,9 @@ dependencies:
   - classy-prelude
   - cryptonite
   - data-default-class
+  - directory
   - either
+  - esqueleto
   - exceptions
   - extra
   - hs-opentelemetry-api
@@ -27,6 +29,8 @@ dependencies:
   - http-types
   - monad-logger
   - mono-traversable
+  - optparse-applicative
+  - optparse-generic
   - path-pieces
   - pcre-heavy
   - persistent
@@ -43,7 +47,9 @@ dependencies:
   - string-conversions
   - template-haskell
   - text
+  - th-abstraction
   - time
+  - typed-process
   - unliftio
   - uri-bytestring
   - uuid
@@ -56,6 +62,10 @@ library:
 executables:
   slacklinker:
     main: app/Main.hs
+    dependencies:
+      - slacklinker
+  one-off-task:
+    main: task/Main.hs
     dependencies:
       - slacklinker
 

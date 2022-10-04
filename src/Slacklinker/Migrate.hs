@@ -12,4 +12,5 @@ migrateBase = migrateModels allEntityDefs
 migrateAll :: Migration
 migrateAll = do
   runSqlCommand $ rawExecute "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" []
+  runSqlCommand $ rawExecute "create type slacklinker_setting as enum ('AllowRegistration', 'MutualTLS')" []
   migrateBase

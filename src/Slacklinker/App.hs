@@ -5,6 +5,8 @@ module Slacklinker.App
     App (..),
     AppConfig (..),
     appSlackConfig,
+    appStartupNoSender,
+    appShutdownNoSender,
     runAppM,
     runDB,
     getConfiguration,
@@ -12,9 +14,9 @@ module Slacklinker.App
   )
 where
 
-import Control.Monad.Logger (ToLogStr (..), defaultOutput)
-import Data.Pool (Pool)
-import Database.Persist.Postgresql (SqlBackend, runSqlPoolWithExtensibleHooks)
+import Control.Monad.Logger (ToLogStr (..), defaultOutput, runStderrLoggingT)
+import Data.Pool (Pool, destroyAllResources)
+import Database.Persist.Postgresql (SqlBackend, runSqlPoolWithExtensibleHooks, createPostgresqlPool)
 import Database.Persist.SqlBackend.SqlPoolHooks
 import Network.HTTP.Client (Manager)
 import OpenTelemetry.Instrumentation.Persistent qualified as OTel
@@ -25,6 +27,7 @@ import Web.Slack (SlackConfig (..))
 import qualified Data.ByteString.Char8 as BS
 import System.Environment (getEnv)
 import Network.HTTP.Client.TLS (newTlsManager)
+import qualified OpenTelemetry.Trace as OTel
 
 data AppConfig = AppConfig
   { slackClientSecret :: SlackClientSecret
@@ -39,13 +42,25 @@ appSlackConfig (SlackToken slackConfigToken) = do
   slackConfigManager <- getsApp (.manager)
   pure SlackConfig {..}
 
--- | Stuff that needs to be torn down on shutdown but isn't actually used by
---   anything in ghci.
+-- | Stuff that needs to be torn down on shutdown but availability depends on
+-- startup mode.
 data RuntimeInfo = RuntimeInfo
   { tracerProvider :: TracerProvider
   , senderAction :: Async ()
   , appPool :: Pool SqlBackend
   }
+
+appStartupNoSender :: App -> IO RuntimeInfo
+appStartupNoSender app = do
+  tracerProvider <- OTel.initializeGlobalTracerProvider
+  appPool <- runStderrLoggingT $ createPostgresqlPool app.config.postgresConnectionString 5
+  let senderAction = error "sender action not available, possibly because this is the sender"
+  pure RuntimeInfo {..}
+
+appShutdownNoSender :: RuntimeInfo -> IO ()
+appShutdownNoSender RuntimeInfo{..} = do
+  OTel.shutdownTracerProvider tracerProvider
+  destroyAllResources appPool
 
 data App = App
   { config :: AppConfig

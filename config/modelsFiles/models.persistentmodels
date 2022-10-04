@@ -25,3 +25,13 @@ Nonce sql=nonces
   UniqueNonceValue nonceValue sql=nonces_nonce_value_key
   -- | When it can be deleted (Slack doesn't give us more than 10min for the flow)
   expiresAt UTCTime
+
+-- | Just put the app settings in the DB.
+Setting sql=settings
+  Id UUID default=uuid_generate_v1mc()
+  tag SlacklinkerSettingTag
+  UniqueSettingTag tag sql=settings_tag_key
+  -- FIXME(jadel): I could only get typesafe tags or typesafe values, and I
+  -- picked the former. This kind of table is kinda recommended against in
+  -- "The Art of PostgreSQL", but I'm not sure how to make it row-wise otherwise.
+  content (JSONB Value)
