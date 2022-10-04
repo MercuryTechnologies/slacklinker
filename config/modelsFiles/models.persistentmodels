@@ -17,15 +17,6 @@ JoinedChannel sql=joined_channels
   channelId ConversationId
   UniqueJoinedChannel workspaceId channelId sql=joined_channels_workspace_channel_key
 
--- | Message that we've sent
-SentMessage sql=sent_messages
-  Id UUID default=uuid_generate_v1mc()
-  workspaceId WorkspaceId
-  messageId MessageId
-  -- | always present since we only reply to things
-  threadTs Text
-  channelId ConversationId
-
 -- | \"state\" parameters we have given to Slack
 Nonce sql=nonces
   Id UUID default=uuid_generate_v1mc()
