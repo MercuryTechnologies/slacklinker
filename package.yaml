@@ -71,52 +71,6 @@ executables:
 
 # Test suite
 tests:
-  test-dev:
-    main: Main.hs
-    source-dirs:
-      - test
-      - slack-web/src
-      - src
-    dependencies:
-      - stm
-      - hspec >= 2.9.4
-      - hspec-core >= 2.9.4
-      - hspec-expectations
-      - hspec-golden >= 0.2
-      - HUnit
-      - aeson >= 2.0 && < 2.2
-      - base >= 4.11 && < 4.18
-      - scientific
-      - containers
-      - deepseq
-      - unordered-containers
-      - mono-traversable
-      - template-haskell
-      - string-variants
-      - classy-prelude
-      - hashable
-      - vector
-      - refined
-      - string-conversions
-      - http-api-data >= 0.3 && < 0.6
-      - http-client >= 0.5 && < 0.8
-      - http-client-tls >= 0.3 && < 0.4
-      - servant >= 0.12 && < 0.20
-      - servant-client >= 0.12 && < 0.20
-      - servant-client-core >= 0.12 && < 0.20
-      - text (>= 1.2 && < 1.3) || (>= 2.0 && < 2.1)
-      - transformers
-      - mtl
-      - time
-      - errors
-      - pcre-heavy
-      - megaparsec >= 5.0 && < 10
-    ghc-options:
-      - -threaded
-      - -rtsopts
-      - -with-rtsopts=-N
-      - -Wno-incomplete-uni-patterns # Failing at runtime just means failing the test, which is ok
-      - -O0
   test:
     main: Main.hs
     source-dirs:
@@ -129,12 +83,36 @@ tests:
       - -O0
 
     dependencies:
-      - hspec >= 2.9.4
-      - hspec-core >= 2.9.4
+      - hspec
+      - hspec-core
       - hspec-expectations
       - hspec-golden >= 0.2
       - HUnit
       - slacklinker
+
+  test-dev:
+    main: Main.hs
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+      - -Wno-incomplete-uni-patterns # Failing at runtime just means failing the test, which is ok
+      - -O0
+    source-dirs:
+      - test
+      - src
+    dependencies:
+      - hspec
+      - hspec-core
+      - hspec-expectations
+      - hspec-golden >= 0.2
+      - HUnit
+    when:
+      - condition: flag(local-dev)
+        then:
+          buildable: true
+        else:
+          buildable: false
 
 # from https://medium.com/mercury-bank/enable-all-the-warnings-a0517bc081c3
 ghc-options:
@@ -151,6 +129,13 @@ ghc-options:
   - -Wno-prepositive-qualified-module # Cabal’s generate Path_*.hs doesn’t do this (fixed in https://github.com/haskell/cabal/pull/7352)
   - -Wno-unused-packages # Some tooling gives this error
   - -Wno-missing-kind-signatures # Warns literally every type
+  # workaround for https://github.com/haskell/cabal/issues/4739
+  # in which -Werror is broken on macOS
+  #
+  # Root cause: since slacklinker's package name is slacklinker, *and* there
+  # are modules called Slacklinker.*, and cabal uses paths that can conflate
+  # these, the C preprocessor gets the wrong case of the path. Harmless.
+  - -optP-Wno-nonportable-include-path
 
 default-extensions:
   - AllowAmbiguousTypes
@@ -193,3 +178,9 @@ default-extensions:
   - TypeApplications
   - TypeFamilies
   - ViewPatterns
+
+flags:
+  local-dev:
+    description: Turn on development settings, like auto-reload templates.
+    manual: false
+    default: false

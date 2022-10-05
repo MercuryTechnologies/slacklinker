@@ -12,11 +12,15 @@
       url = "github:snoyberg/mono-traversable";
       flake = false;
     };
+    flake-compat = {
+      url = "github:edolstra/flake-compat";
+      flake = false;
+    };
   };
 
   nixConfig.allow-import-from-derivation = true; # cabal2nix uses IFD
 
-  outputs = { self, nixpkgs, flake-utils, slack-web, mono-traversable }:
+  outputs = { self, nixpkgs, flake-utils, slack-web, mono-traversable, ... }:
     let
       ghcVer = "ghc924";
       makeHaskellOverlay = overlay: final: prev: {
@@ -82,9 +86,16 @@
       # this stuff is *not* per-system
       overlays = {
         default = makeHaskellOverlay (prev: hfinal: hprev:
-          let hlib = prev.haskell.lib; in
-          {
+          let
+            hlib = prev.haskell.lib;
+            build = import ./nix/build.nix {
+              inherit prev hfinal hprev;
+              werror = true;
+            };
             slacklinker = hprev.callCabal2nix "slacklinker" ./. { };
+          in
+          {
+            slacklinker = build slacklinker;
             slack-web = hprev.callCabal2nix "slack-web" slack-web { };
             string-variants = hprev.callHackageDirect { pkg = "string-variants"; ver = "0.1.0.1"; sha256 = "sha256-7oNYwPP8xRNYxKNdNH+21zBHdeUeiWBtKOK5G43xtSQ="; } { };
 
