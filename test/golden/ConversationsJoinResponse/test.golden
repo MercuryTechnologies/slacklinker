@@ -19,7 +19,7 @@ ConversationsJoinResponse
                     { unTeamId = "T043DB835ML" }
                 ]
             , channelIsPendingExtShared = False
-            , channelIsMember = True
+            , channelIsMember = Just True
             , channelTopic = Topic
                 { topicValue = ""
                 , topicCreator = ""
