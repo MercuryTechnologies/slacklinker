@@ -11,9 +11,10 @@ import Slacklinker.Models
 import Slacklinker.PersistImport
 import Slacklinker.Settings.Types
 
-setSetting :: MonadIO m => SlacklinkerSetting -> SqlPersistT m ()
+setSetting :: MonadIO m => SlacklinkerSettingEx -> SqlPersistT m ()
 setSetting setting = do
-  let (tag, content) = marshalSetting setting
+  let content = marshalSetting setting
+      tag = reifyTag
   void $
     upsertBy
       (UniqueSettingTag tag)
@@ -24,12 +25,15 @@ settingDefaultByTag :: SlacklinkerSettingTag -> Value
 settingDefaultByTag AllowRegistration = toJSON True
 settingDefaultByTag RequireMutualTLS = toJSON False
 
-getSetting :: MonadIO m => SlacklinkerSettingTag -> SqlPersistT m SlacklinkerSetting
-getSetting tag = do
-  mSettingE <- getBy (UniqueSettingTag tag)
+getSetting ::
+  forall (tag :: SlacklinkerSettingTag) m.
+  (MarshalledSetting tag, MonadIO m) =>
+  SqlPersistT m (SlacklinkerSetting tag)
+getSetting = do
+  mSettingE <- getBy (UniqueSettingTag $ reifyTag @tag)
   let settingVal =
         maybe
-          (settingDefaultByTag tag)
+          (settingDefaultByTag $ reifyTag @tag)
           (unJSONB . (.content) . entityVal)
           mSettingE
-  fromEither . mapLeft AesonDecodeError $ unmarshalSetting tag settingVal
+  fromEither . mapLeft AesonDecodeError $ unmarshalSetting @tag settingVal
