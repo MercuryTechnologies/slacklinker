@@ -48,7 +48,7 @@ doSetSetting ::
   Value ->
   SqlPersistT m ()
 doSetSetting settingName value = do
-  setting <- fromEither . mapLeft AesonDecodeError $ unmarshalSetting settingName value
+  setting <- fromEither . mapLeft AesonDecodeError $ unmarshalSettingByTag settingName value
   setSetting setting
 
 runTask :: Task Unwrapped -> AppM ()
