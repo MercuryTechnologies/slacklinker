@@ -26,6 +26,14 @@ unmarshalSettingByTag tag val = case tag of
   AllowRegistration -> SlacklinkerSettingEx <$> unmarshalSetting @'AllowRegistration val
   RequireMutualTLS -> SlacklinkerSettingEx <$> unmarshalSetting @'RequireMutualTLS val
 
+-- | You don't want this function unless the tag is determined at runtime.
+marshalSettingEx :: SlacklinkerSettingEx -> (SlacklinkerSettingTag, Value)
+marshalSettingEx = \case
+  SlacklinkerSettingEx (a@(SettingAllowRegistration _) :: SlacklinkerSetting tag) ->
+    (reifyTag @tag, marshalSetting a)
+  SlacklinkerSettingEx (a@(SettingRequireMutualTLS _) :: SlacklinkerSetting tag) ->
+    (reifyTag @tag, marshalSetting a)
+
 {- | This is a funny DataKinds thing to let you decode settings as a GADT,
  which allows safely unwrapping the 'SlacklinkerSetting' by moving the
  tag parameter to a type parameter (so it is at compile time and GHC knows which

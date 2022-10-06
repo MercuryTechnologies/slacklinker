@@ -13,8 +13,7 @@ import Slacklinker.Settings.Types
 
 setSetting :: MonadIO m => SlacklinkerSettingEx -> SqlPersistT m ()
 setSetting setting = do
-  let content = marshalSetting setting
-      tag = reifyTag
+  let (tag, content) = marshalSettingEx setting
   void $
     upsertBy
       (UniqueSettingTag tag)
