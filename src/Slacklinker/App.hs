@@ -139,7 +139,8 @@ getConfiguration = do
 
 makeApp :: IO App
 makeApp = do
-  -- FIXME(jadel): instrument
+  -- FIXME(jadel): I want to instrument the HTTP manager for debugging
+  -- purposes, but hs-opentelemetry does not support it.
   manager <- newTlsManager
   config <- getConfiguration
   let runtimeInfo = error "runtime info not initialized yet. this is a bug"
