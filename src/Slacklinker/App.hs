@@ -14,26 +14,29 @@ module Slacklinker.App
   )
 where
 
-import Control.Monad.Logger (ToLogStr (..), defaultOutput, runStderrLoggingT)
+import Control.Monad.Logger (LogLevel (..), MonadLoggerIO, ToLogStr (..), defaultOutput)
+import Control.Monad.Logger.CallStack (MonadLoggerIO (..))
+import Data.ByteString.Char8 qualified as BS
 import Data.Pool (Pool, destroyAllResources)
-import Database.Persist.Postgresql (SqlBackend, runSqlPoolWithExtensibleHooks, createPostgresqlPool)
+import Database.Persist.Postgresql (SqlBackend, createPostgresqlPool, runSqlPoolWithExtensibleHooks)
 import Database.Persist.SqlBackend.SqlPoolHooks
 import Network.HTTP.Client (Manager)
+import Network.HTTP.Client.TLS (newTlsManager)
 import OpenTelemetry.Instrumentation.Persistent qualified as OTel
 import OpenTelemetry.Trace (TracerProvider)
+import OpenTelemetry.Trace qualified as OTel
 import Slacklinker.Import
-import Slacklinker.Types (SlackClientSecret(..), SlackSigningSecret(..), SlackToken (..))
+import Slacklinker.Types (SlackClientSecret (..), SlackSigningSecret (..), SlackToken (..))
+import System.Environment (getEnv, lookupEnv)
 import Web.Slack (SlackConfig (..))
-import qualified Data.ByteString.Char8 as BS
-import System.Environment (getEnv)
-import Network.HTTP.Client.TLS (newTlsManager)
-import qualified OpenTelemetry.Trace as OTel
 
 data AppConfig = AppConfig
   { slackClientSecret :: SlackClientSecret
   , slackSigningSecret :: SlackSigningSecret
   , slackClientId :: Text
   , postgresConnectionString :: ByteString
+  , sqlLogLevel :: LogLevel
+  , logLevel :: LogLevel
   }
   deriving stock (Show)
 
@@ -42,8 +45,9 @@ appSlackConfig (SlackToken slackConfigToken) = do
   slackConfigManager <- getsApp (.manager)
   pure SlackConfig {..}
 
--- | Stuff that needs to be torn down on shutdown but availability depends on
--- startup mode.
+{- | Stuff that needs to be torn down on shutdown but availability depends on
+ startup mode.
+-}
 data RuntimeInfo = RuntimeInfo
   { tracerProvider :: TracerProvider
   , senderAction :: Async ()
@@ -53,12 +57,13 @@ data RuntimeInfo = RuntimeInfo
 appStartupNoSender :: App -> IO RuntimeInfo
 appStartupNoSender app = do
   tracerProvider <- OTel.initializeGlobalTracerProvider
-  appPool <- runStderrLoggingT $ createPostgresqlPool app.config.postgresConnectionString 5
+  -- needs to run in AppM to get our main logger
+  appPool <- runAppM app $ createPostgresqlPool app.config.postgresConnectionString 5
   let senderAction = error "sender action not available, possibly because this is the sender"
   pure RuntimeInfo {..}
 
 appShutdownNoSender :: RuntimeInfo -> IO ()
-appShutdownNoSender RuntimeInfo{..} = do
+appShutdownNoSender RuntimeInfo {..} = do
   OTel.shutdownTracerProvider tracerProvider
   destroyAllResources appPool
 
@@ -78,7 +83,21 @@ newtype AppM a = AppM {unAppM :: ReaderT App IO a}
 
 instance MonadLogger AppM where
   monadLoggerLog loc source level msg = do
-    liftIO $ defaultOutput stderr loc source level $ toLogStr msg
+    logger <- askLoggerIO
+    liftIO $ logger loc source level (toLogStr msg)
+
+instance MonadLoggerIO AppM where
+  askLoggerIO = do
+    logLevel <- getsApp (.config.logLevel)
+    sqlLogLevel <- getsApp (.config.sqlLogLevel)
+    pure \loc source level msg -> do
+      case source of
+        "SQL" ->
+          when (level >= sqlLogLevel) $
+            defaultOutput stderr loc source level msg
+        _ ->
+          when (level >= logLevel) $
+            defaultOutput stderr loc source level msg
 
 instance HasApp AppM where
   getApp = do
@@ -97,12 +116,22 @@ runDB act = do
   where
     hooks = setAlterBackend defaultSqlPoolHooks $ OTel.wrapSqlBackend []
 
+readLogLevel :: [Char] -> LogLevel
+readLogLevel "debug" = LevelDebug
+readLogLevel "info" = LevelInfo
+readLogLevel "warn" = LevelWarn
+readLogLevel "error" = LevelError
+readLogLevel other = error $ "unknown log level " <> other
+
 getConfiguration :: IO AppConfig
 getConfiguration = do
   slackSigningSecret <- SlackSigningSecret <$> getEnvBS "SLACK_SIGNING_SECRET"
   slackClientSecret <- SlackClientSecret . cs <$> getEnvBS "SLACK_CLIENT_SECRET"
   slackClientId <- cs <$> getEnvBS "SLACK_CLIENT_ID"
   postgresConnectionString <- getEnvBS "POSTGRES_CONNECTION_STRING"
+  logLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_LEVEL"
+  sqlLogLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_SQL"
+
   pure AppConfig {..}
   where
     getEnvBS :: String -> IO ByteString
