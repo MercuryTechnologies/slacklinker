@@ -29,7 +29,7 @@
             ${ghcVer} = prev.haskell.packages."${ghcVer}".override (oldArgs: {
               overrides =
                 prev.lib.composeExtensions (oldArgs.overrides or (_: _: { }))
-                  (overlay prev);
+                  (overlay prev final);
             });
           };
         };
@@ -85,11 +85,11 @@
     flake-utils.lib.eachDefaultSystem out // {
       # this stuff is *not* per-system
       overlays = {
-        default = makeHaskellOverlay (prev: hfinal: hprev:
+        default = makeHaskellOverlay (prev: final: hfinal: hprev:
           let
             hlib = prev.haskell.lib;
             build = import ./nix/build.nix {
-              inherit prev hfinal hprev;
+              inherit prev final hfinal hprev;
               werror = true;
             };
             slacklinker = hprev.callCabal2nix "slacklinker" ./. { };

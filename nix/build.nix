@@ -1,21 +1,48 @@
-{ prev, hfinal, hprev, werror }: slacklinker:
+{ prev, final, hfinal, hprev, werror }: slacklinker:
 let
   hlib = prev.haskell.lib;
   lib = prev.lib;
+  extraFiles = [ ../config ../db ];
+  copy = f: "cp -R ${f} $out/${builtins.baseNameOf f}";
+  migrateDeps = [
+    final.refinery-cli
+  ];
+
+  # determined through use of `strings | grep /nix/store`
+  # allegedly enableSeparateDataOutput does something, but I've not found that
+  # to be true. So just nuke it. w/e.
+  badReferences = [
+    hfinal.hs-opentelemetry-sdk
+    hfinal.warp
+  ];
+
+  referencesCmdline = lib.concatMapStrings (x: "-t ${x} ") badReferences;
 in
-(hlib.overrideCabal slacklinker
+(hlib.overrideCabal (hlib.justStaticExecutables slacklinker)
   (drv: {
     configureFlags = (drv.configureFlags or [ ])
       ++ lib.optionals werror [ "--ghc-option=-Werror" ];
-    # primarily motivated by the fact that we have a test-dev testsuite that we
-    # would not like to build pointlessly
-    checkPhase = ''
-      runHook preCheck
-      ./Setup test --show-details=direct $checkFlags ''${checkFlagsArray:+"''${checkFlagsArray[@]}"}
-      runHook postCheck
+
+    # chmod: hack since the extraFiles are in the nix store and cp preserves
+    # permissions (desirable except for the lack of write bit)
+    #
+    # remove-references-to: heinous hack to deal with bonus stuff ending up in
+    # closure:
+    # https://github.com/NixOS/nixpkgs/issues/42095
+    postInstall = ''
+      ${lib.concatStringsSep "\n" (map copy extraFiles)}
+      chmod -R u+w $out
+      wrapProgram "$out/db/migrate.sh" --prefix PATH : "${lib.makeBinPath migrateDeps}"
+
+      remove-references-to ${referencesCmdline} $out/bin/*
     '';
   })).overrideAttrs (old: {
   # Don’t allow focused tests to pass CI
   HSPEC_OPTIONS = "--fail-on-focused";
 
+  disallowedReferences = badReferences;
+
+  nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
+    final.makeWrapper
+  ];
 })
