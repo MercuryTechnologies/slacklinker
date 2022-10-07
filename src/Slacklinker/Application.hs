@@ -11,15 +11,15 @@ import Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR)
 import Slacklinker.Import
 import Slacklinker.Types
 
-newtype Greet = Greet {msg :: Text}
+newtype Healthcheck = Healthcheck {alive :: Bool}
   deriving stock (Show)
 
-$(deriveToJSON defaultOptions ''Greet)
+$(deriveToJSON defaultOptions ''Healthcheck)
 
 type RequiredHeader = Header' '[Required, Strict]
 
 type Api =
-  "hello" :> Get '[JSON] Greet
+  "alive" :> Get '[JSON] Healthcheck
     :<|> "webhook"
       :> RequiredHeader "X-Slack-Signature" SlackSignature
       :> RequiredHeader "X-Slack-Request-Timestamp" SlackRequestTimestamp
@@ -35,11 +35,11 @@ context :: Context '[]
 context = EmptyContext
 
 server :: ServerT Api AppM
-server = helloH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH
+server = aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH
   where
     authorizeH = getAuthorizeR
     oauthRedirectH = getOauthRedirectR
-    helloH = return . Greet $ "blah"
+    aliveH = return . Healthcheck $ True
     webhookH sig ts body = postSlackInteractiveWebhookR sig ts body
 
 api :: Proxy Api
