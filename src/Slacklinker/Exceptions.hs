@@ -11,6 +11,7 @@ import Network.Wai (Middleware, responseLBS)
 import Slacklinker.Prelude
 import UnliftIO.Exception qualified as E
 import Web.Slack.Common (TeamId (..))
+import Web.Slack.Experimental.RequestVerification
 
 -- | Response for some type of exception.
 class (Typeable e, Show e) => ExceptionResponse e where
@@ -103,6 +104,15 @@ data RegistrationDisabled = RegistrationDisabled
 
 instance ExceptionResponse RegistrationDisabled where
   status _ = status400
+
+newtype VerificationException = VerificationException SlackVerificationFailed
+  deriving newtype Show
+  deriving (Exception) via DeriveServiceException VerificationException
+
+instance ExceptionResponse VerificationException where
+  status (VerificationException e) = case e of
+    VerificationSignatureMismatch -> status401
+    _ -> status400
 
 errorMiddleware :: Middleware
 errorMiddleware baseApp req respond =

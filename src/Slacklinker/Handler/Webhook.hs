@@ -1,25 +1,27 @@
+-- | == Design of Slacklinker webhooks
+--
+--   Slacklinker uses the [Slack Events API](https://api.slack.com/events) to
+--   get real time notifications of messages.
+--
+--   Webhooks need to have their signature verified, which is done on the
+--   endpoint handler. After this, we know that the messages were sent by Slack
+--   and can be trusted.
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR) where
 
-import Crypto.Hash (SHA256, digestFromByteString)
-import Crypto.MAC.HMAC
 import Data.Aeson (Value (Object))
-import Data.ByteString.Base16 qualified as B16
-import Data.ByteString.Char8 (readInt)
-import Data.Either.Combinators (maybeToRight)
 import Data.Text qualified as T
 import Data.Time.Clock.POSIX
 import Database.Persist
-import Servant (ServerError, err400, err401, err500)
 import Slacklinker.App
 import Slacklinker.Exceptions
-import Slacklinker.Handler.Webhook.Types
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Sender
 import Slacklinker.SplitUrl
-import Slacklinker.Types
 import Web.Slack.Experimental.Blocks
+import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, validateRequest)
 import Web.Slack.Types (TeamId (..))
+import Web.Slack.Experimental.Events.Types
 
 extractLinks :: SlackBlock -> [Text]
 extractLinks block =
@@ -37,11 +39,11 @@ extractLinks block =
 
 workspaceMetaFromWorkspaceE :: Entity Workspace -> WorkspaceMeta
 workspaceMetaFromWorkspaceE (Entity wsId ws) =
-          WorkspaceMeta
-            { slackTeamId = ws.slackTeamId
-            , workspaceId = wsId
-            , token = ws.slackOauthToken
-            }
+  WorkspaceMeta
+    { slackTeamId = ws.slackTeamId
+    , workspaceId = wsId
+    , token = ws.slackOauthToken
+    }
 
 makeMessage :: Entity Workspace -> MessageEvent -> SlackUrlParts -> Maybe SendMessageReq
 makeMessage wsE@(Entity _ ws) msgEv SlackUrlParts {..} = do
@@ -78,10 +80,11 @@ parseImCommand rawText = go $ T.strip rawText
     go _ = Help
 
 helpMessage :: Text
-helpMessage = unlines [
-    "Welcome to Slacklinker. Here are the commands you can use:"
+helpMessage =
+  unlines
+    [ "Welcome to Slacklinker. Here are the commands you can use:"
     , "* `join_all` - Join all public channels"
-  ]
+    ]
 
 handleMessage :: (HasApp m, MonadIO m) => MessageEvent -> TeamId -> m ()
 handleMessage ev teamId = do
@@ -97,12 +100,14 @@ handleMessage ev teamId = do
     Im -> do
       let cmd = parseImCommand ev.text
       case cmd of
-        Help -> senderEnqueue . SendMessage $ SendMessageReq {
-            replyToTs = Nothing
-            , channel = ev.channel
-            , messageContent = helpMessage
-            , workspaceMeta = workspaceMetaFromWorkspaceE workspace
-          }
+        Help ->
+          senderEnqueue . SendMessage $
+            SendMessageReq
+              { replyToTs = Nothing
+              , channel = ev.channel
+              , messageContent = helpMessage
+              , workspaceMeta = workspaceMetaFromWorkspaceE workspace
+              }
         JoinAll -> senderEnqueue $ ReqJoinAll (workspaceMetaFromWorkspaceE workspace) ev.channel
 
       pure ()
@@ -152,65 +157,16 @@ handleEvent (EventUnknownWebhook v) = do
 
 postSlackInteractiveWebhookR :: SlackSignature -> SlackRequestTimestamp -> ByteString -> AppM Value
 postSlackInteractiveWebhookR sig ts body = do
-  ePayload <- validateRequest sig ts body
+  secret <- getsApp (.config.slackSigningSecret)
+  putStrLn $ tshow sig
+  putStrLn $ tshow ts
+  putStrLn . tshow =<< liftIO getPOSIXTime
+  ePayload <- validateRequest secret sig ts body
   case ePayload of
     Left err -> do
       logDebug $ "webhook err: " <> tshow err
-      throwIO $ toStatus err
-    Right payload -> do
-      logDebug $ "payload: " <> cs payload <> "\n\n"
-      todo <- decodeThrow payload
+      throwIO $ VerificationException err
+    Right todo -> do
+      logDebug $ "payload: " <> cs body <> "\n\n"
       logDebug $ "webhook todo: " <> tshow todo <> "\n\n"
       handleEvent todo
-
-data SlackInteractiveException
-  = SlackInteractiveMissingTimestamp
-  | SlackInteractiveMalformedTimestamp ByteString
-  | SlackInteractiveTimestampOutOfRange Int
-  | SlackInteractiveMissingSignature
-  | SlackInteractiveUnknownSignatureVersion ByteString
-  | SlackInteractiveMalformedSignature String
-  | SlackInteractiveUndecodableSignature ByteString
-  | SlackInteractiveSignatureMismatch
-  | SlackInteractiveCannotParse Text
-  deriving stock (Show)
-
-instance Exception SlackInteractiveException
-
-toStatus :: SlackInteractiveException -> ServerError
-toStatus SlackInteractiveSignatureMismatch = err401
-toStatus (SlackInteractiveCannotParse _) = err500
-toStatus _ = err400
-
--- See https://api.slack.com/authentication/verifying-requests-from-slack
-validateRequest ::
-  (HasApp m, MonadIO m) =>
-  SlackSignature ->
-  SlackRequestTimestamp ->
-  ByteString ->
-  m (Either SlackInteractiveException ByteString)
-validateRequest (SlackSignature sigHeader) (SlackRequestTimestamp timestampString) body = do
-  (SlackSigningSecret secret) <- getsApp (.config.slackSigningSecret)
-  let fiveMinutes = 5 * 60
-  now <- fmap utcTimeToPOSIXSeconds $ liftIO getCurrentTime
-  pure $ do
-    -- timestamp must be an Int for proper basestring construction below
-    timestamp <-
-      maybeToRight (SlackInteractiveMalformedTimestamp timestampString) $
-        fst <$> readInt timestampString
-    if abs (now - fromIntegral timestamp) > fiveMinutes
-      then Left $ SlackInteractiveTimestampOutOfRange timestamp
-      else Right ()
-    sigHeaderStripped <-
-      maybeToRight (SlackInteractiveUnknownSignatureVersion sigHeader) $
-        stripPrefix "v0=" sigHeader
-    sigDecoded <-
-      mapLeft SlackInteractiveMalformedSignature $
-        B16.decode sigHeaderStripped
-    sig :: HMAC SHA256 <-
-      maybeToRight (SlackInteractiveUndecodableSignature sigDecoded) $
-        HMAC <$> digestFromByteString sigDecoded
-    let basestring = encodeUtf8 ("v0:" <> tshow timestamp <> ":") <> body
-    when (hmac secret basestring /= sig) $
-      Left SlackInteractiveSignatureMismatch
-    pure body

@@ -26,9 +26,10 @@ import OpenTelemetry.Instrumentation.Persistent qualified as OTel
 import OpenTelemetry.Trace (TracerProvider)
 import OpenTelemetry.Trace qualified as OTel
 import Slacklinker.Import
-import Slacklinker.Types (SlackClientSecret (..), SlackSigningSecret (..), SlackToken (..))
+import Slacklinker.Types (SlackClientSecret (..), SlackToken (..))
 import System.Environment (getEnv, lookupEnv)
 import Web.Slack (SlackConfig (..))
+import Web.Slack.Experimental.RequestVerification (SlackSigningSecret (..))
 
 data AppConfig = AppConfig
   { slackClientSecret :: SlackClientSecret

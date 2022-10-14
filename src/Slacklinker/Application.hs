@@ -10,6 +10,7 @@ import Slacklinker.Handler.Authorize (getAuthorizeR, getOauthRedirectR)
 import Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR)
 import Slacklinker.Import
 import Slacklinker.Types
+import Web.Slack.Experimental.RequestVerification
 
 newtype Healthcheck = Healthcheck {alive :: Bool}
   deriving stock (Show)

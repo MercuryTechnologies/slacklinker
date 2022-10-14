@@ -1,3 +1,5 @@
+create extension if not exists "uuid-ossp";
+
 create table "workspaces" (
     "id" uuid primary key unique default uuid_generate_v1mc (),
     "slack_subdomain" varchar not null,

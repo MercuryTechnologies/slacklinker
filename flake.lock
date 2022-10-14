@@ -75,16 +75,15 @@
     "slack-web": {
       "flake": false,
       "locked": {
-        "lastModified": 1664904226,
-        "narHash": "sha256-Sl40K6krZplPKss/+kaYef4BeVirDIazUwhWTV40O2U=",
+        "lastModified": 1665702777,
+        "narHash": "sha256-TfIi6gHBWhJNuYjMo3Pi3p9o0a0S+ZwZx/36yXf3y24=",
         "owner": "mercurytechnologies",
         "repo": "slack-web",
-        "rev": "395cf1fc7b860112e9382e51b0371ea3e5cb990e",
+        "rev": "7fd47a2ed6e69ceb0329df2b5ad7f47c38dfe376",
         "type": "github"
       },
       "original": {
         "owner": "mercurytechnologies",
-        "ref": "jadel/slacklinker",
         "repo": "slack-web",
         "type": "github"
       }
