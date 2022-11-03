@@ -16,3 +16,6 @@ A full list of these is in
 ## Development notes
 
 Use `scripts/update-golden.sh SOME_GOLDEN_DIR` to update golden files.
+
+Set log level with `LOG_LEVEL=debug` and SQL log level with `LOG_SQL=debug`
+environment variables

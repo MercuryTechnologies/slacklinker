@@ -20,7 +20,8 @@ $(deriveToJSON defaultOptions ''Healthcheck)
 type RequiredHeader = Header' '[Required, Strict]
 
 type Api =
-  "alive" :> Get '[JSON] Healthcheck
+  Get '[JSON] Healthcheck
+    :<|> "alive" :> Get '[JSON] Healthcheck
     :<|> "webhook"
       :> RequiredHeader "X-Slack-Signature" SlackSignature
       :> RequiredHeader "X-Slack-Request-Timestamp" SlackRequestTimestamp
@@ -36,7 +37,7 @@ context :: Context '[]
 context = EmptyContext
 
 server :: ServerT Api AppM
-server = aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH
+server = aliveH :<|> aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH
   where
     authorizeH = getAuthorizeR
     oauthRedirectH = getOauthRedirectR
