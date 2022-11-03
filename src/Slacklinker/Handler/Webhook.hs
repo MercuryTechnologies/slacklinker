@@ -10,7 +10,6 @@ module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR) where
 
 import Data.Aeson (Value (Object))
 import Data.Text qualified as T
-import Data.Time.Clock.POSIX
 import Database.Persist
 import Slacklinker.App
 import Slacklinker.Exceptions
@@ -158,9 +157,6 @@ handleEvent (EventUnknownWebhook v) = do
 postSlackInteractiveWebhookR :: SlackSignature -> SlackRequestTimestamp -> ByteString -> AppM Value
 postSlackInteractiveWebhookR sig ts body = do
   secret <- getsApp (.config.slackSigningSecret)
-  putStrLn $ tshow sig
-  putStrLn $ tshow ts
-  putStrLn . tshow =<< liftIO getPOSIXTime
   ePayload <- validateRequest secret sig ts body
   case ePayload of
     Left err -> do
