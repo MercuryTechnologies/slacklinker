@@ -14,10 +14,10 @@ ConversationsJoinResponse
                 { unUserId = "U043H11ES4V" }
             , channelIsExtShared = False
             , channelIsOrgShared = False
-            , channelSharedTeamIds =
-                [ TeamId
-                    { unTeamId = "T043DB835ML" }
-                ]
+            , channelSharedTeamIds = Just
+                ( TeamId
+                    { unTeamId = "T043DB835ML" } :| []
+                )
             , channelIsPendingExtShared = False
             , channelIsMember = Just True
             , channelTopic = Topic
