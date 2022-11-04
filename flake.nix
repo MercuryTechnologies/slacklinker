@@ -97,10 +97,8 @@
           {
             slacklinker = build slacklinker;
             slack-web = hprev.callCabal2nix "slack-web" slack-web { };
-            string-variants = hprev.callHackageDirect { pkg = "string-variants"; ver = "0.1.0.1"; sha256 = "sha256-7oNYwPP8xRNYxKNdNH+21zBHdeUeiWBtKOK5G43xtSQ="; } { };
-
-            # jackage in the testsuite
-            mutable-containers = hprev.callCabal2nixWithOptions "mutable-containers" mono-traversable "--subpath=mutable-containers" { };
+            # possible macOS lack-of-sandbox related breakage
+            http2 = if prev.stdenv.isDarwin then hlib.dontCheck hprev.http2 else hprev.http2;
           });
       };
     };
