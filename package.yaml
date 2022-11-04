@@ -16,6 +16,7 @@ dependencies:
   - esqueleto
   - exceptions
   - extra
+  - generic-deriving
   - hs-opentelemetry-api
   - hs-opentelemetry-exporter-otlp
   - hs-opentelemetry-instrumentation-http-client

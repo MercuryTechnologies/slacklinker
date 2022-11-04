@@ -1,17 +1,20 @@
-module Slacklinker.Sender
-  ( WorkspaceMeta (..),
-    SenderRequest (..),
-    SendMessageReq (..),
-    senderEnqueue,
-    runSlack,
-    senderHandler,
-    senderThread,
-  )
-where
+module Slacklinker.Sender (
+  WorkspaceMeta (..),
+  SenderRequest (..),
+  SendMessageReq (..),
+  senderEnqueue,
+  runSlack,
+  senderHandler,
+  senderThread,
+) where
 
+import Control.Monad.Extra (whenJust)
 import Database.Persist
+import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
+import OpenTelemetry.Trace (addAttribute)
+import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp, appSlackConfig, runDB)
 import Slacklinker.Import
 import Slacklinker.Models
@@ -56,7 +59,7 @@ data SenderRequest
     -- ConversationId is for feedback to the user.
     ReqJoinAll WorkspaceMeta ConversationId
   | RequestTerminate
-  deriving stock (Show)
+  deriving stock (Show, Generic)
 
 data Terminate = Terminate deriving stock (Show)
 
@@ -80,6 +83,8 @@ senderHandler loc e = do
       putStrLn $ loc <> ": Sender terminate"
       throwIO e
     Nothing -> do
+      mspan <- OTel.lookupSpan <$> OTel.getContext
+      whenJust mspan $ \span -> OTel.recordException span [] Nothing e
       -- unexpected exception, log it
       putStrLn $ loc <> ": SENDER EXC: " <> pack (displayException e)
 
@@ -144,7 +149,7 @@ doJoinAll wsInfo cid = do
   logMessage $ "Got " <> (tshow $ length conversations) <> " conversations to join. Joining them now."
   forM_ conversations $ \c -> do
     logDebug $ "joining: " <> c.channelName
-    doJoinChannel wsInfo c.channelId
+    senderEnqueue $ JoinChannel wsInfo c.channelId
 
   logMessage "Done!"
   where
@@ -154,11 +159,22 @@ doJoinAll wsInfo cid = do
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
 handleTodo :: SenderRequest -> AppM ()
-handleTodo = \case
-  SendMessage req -> doSendMessage req
-  JoinChannel wsInfo cid -> doJoinChannel wsInfo cid
-  ReqJoinAll wsInfo cid -> doJoinAll wsInfo cid
-  RequestTerminate -> throwIO Terminate
+handleTodo r =
+  let conName = conNameOf r
+   in inSpan' (cs conName) defaultSpanArguments \span -> case r of
+        SendMessage req -> do
+          addAttribute span "slack.channel" req.channel.unConversationId
+          doSendMessage req
+        JoinChannel wsInfo cid -> do
+          addAttribute span "slack.channel" cid.unConversationId
+          addWorkspaceInfo span wsInfo
+          doJoinChannel wsInfo cid
+        ReqJoinAll wsInfo cid -> do
+          addWorkspaceInfo span wsInfo
+          doJoinAll wsInfo cid
+        RequestTerminate -> throwIO Terminate
+  where
+    addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId
 
 senderThread :: AppM ()
 senderThread = forever $ do

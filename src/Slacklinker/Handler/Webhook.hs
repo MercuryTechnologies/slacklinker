@@ -13,12 +13,15 @@ import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
 import Data.Aeson.Types (parse)
 import Data.Text qualified as T
 import Database.Persist
+import Generics.Deriving.ConNames (conNameOf)
+import OpenTelemetry.Trace.Core (Span, addAttribute)
 import Slacklinker.App
 import Slacklinker.Exceptions
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Sender
 import Slacklinker.SplitUrl
+import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, validateRequest)
@@ -116,15 +119,16 @@ handleMessage ev teamId = do
       -- we don't do these
       pure ()
 
-handleCallback :: Event -> TeamId -> AppM Value
-handleCallback (EventMessage ev) teamId | isNothing ev.botId = do
+handleCallback :: Event -> TeamId -> Span -> AppM Value
+handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
+  addAttribute span "slack.conversation.id" ev.channel.unConversationId
   handleMessage ev teamId
   pure $ Object mempty
 -- if it's a bot message
-handleCallback (EventMessage _ev) _ = pure $ Object mempty
-handleCallback (EventMessageChanged) _ = pure $ Object mempty
-handleCallback (EventChannelJoinMessage) _ = pure $ Object mempty
-handleCallback (EventChannelCreated createdEvent) teamId = do
+handleCallback (EventMessage _ev) _ _ = pure $ Object mempty
+handleCallback (EventMessageChanged) _ _ = pure $ Object mempty
+handleCallback (EventChannelJoinMessage) _ _ = pure $ Object mempty
+handleCallback (EventChannelCreated createdEvent) teamId _ = do
   -- join new channels
   -- FIXME(jadel): should this be configurable behaviour?
   Entity workspaceId workspace <- workspaceByTeamId teamId
@@ -137,22 +141,26 @@ handleCallback (EventChannelCreated createdEvent) teamId = do
         }
       createdEvent.channel.id
   pure $ Object mempty
-handleCallback (EventChannelLeft l) teamId = do
+handleCallback (EventChannelLeft l) teamId _ = do
   -- remove our database entry stating we're in it
   Entity wsId _ <- workspaceByTeamId teamId
   runDB $ do
     deleteBy $ UniqueJoinedChannel wsId l.channel
   pure $ Object mempty
-handleCallback (EventUnknown v) _ = do
-  case parse shouldIgnore v of
-    Success True -> pure ()
-    _ -> logInfo $ "unknown webhook callback: " <> tshow v
+handleCallback (EventUnknown v) _ span = do
+  case parse typeAndSubtype v of
+    Success (type_, subtype) -> do
+      unless (isUnknownButIgnored type_ subtype) logUnknown
+      addAttribute span "slack.event.type" type_
+      addAttribute span "slack.event.subtype" (fromMaybe "" subtype)
+    _ -> logUnknown
   pure $ Object mempty
   where
-    shouldIgnore = withObject "webhook event" \val -> do
+    logUnknown = logInfo $ "unknown webhook callback: " <> tshow v
+    typeAndSubtype = withObject "webhook event" \val -> do
       type_ <- val .: "type"
       subtype <- val .:? "subtype"
-      pure $ isUnknownButIgnored type_ subtype
+      pure (type_, subtype)
 
     isUnknownButIgnored :: Text -> Maybe Text -> Bool
     isUnknownButIgnored "message" (Just "bot_message") = True
@@ -164,7 +172,9 @@ handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
   pure . toJSON $ UrlVerificationResponse {challenge}
 handleEvent (EventEventCallback EventCallback {event, teamId}) = do
-  handleCallback event teamId
+  inSpan' (cs $ conNameOf event) defaultSpanArguments \span -> do
+    addAttribute span "slack.team.id" teamId.unTeamId
+    handleCallback event teamId span
 handleEvent (EventUnknownWebhook v) = do
   logInfo $ "unknown webhook event: " <> tshow v
   pure $ Object mempty
@@ -180,4 +190,5 @@ postSlackInteractiveWebhookR sig ts body = do
     Right todo -> do
       logDebug $ "payload: " <> cs body <> "\n\n"
       logDebug $ "webhook todo: " <> tshow todo <> "\n\n"
-      handleEvent todo
+      inSpan (cs $ conNameOf todo) defaultSpanArguments $ do
+        handleEvent todo
