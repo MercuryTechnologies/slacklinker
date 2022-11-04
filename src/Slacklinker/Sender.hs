@@ -126,8 +126,14 @@ fetchAllConversations wsInfo = do
         )
   liftIO $ loadingPage list_ convertPage
   where
+    -- We exclude shared channels from conversations that we care about, mostly
+    -- just to be safe. The bot can be manually joined to such channels if so
+    -- desired.
+    isShared (Channel c) = channelIsShared c
+    isShared _ = False
+
     convertPage resp =
-      fromList @(Vector _) <$> fromEither resp
+      fromList @(Vector _) . filter (not . isShared) <$> fromEither resp
 
 doJoinAll :: (HasApp m, MonadIO m) => WorkspaceMeta -> ConversationId -> m ()
 doJoinAll wsInfo cid = do
