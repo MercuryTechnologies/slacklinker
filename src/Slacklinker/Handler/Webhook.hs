@@ -154,11 +154,11 @@ handleCallback (EventUnknown v) _ = do
       subtype <- val .:? "subtype"
       pure $ isUnknownButIgnored type_ subtype
 
-isUnknownButIgnored :: Text -> Maybe Text -> Bool
-isUnknownButIgnored "message" (Just "bot_message") = True
-isUnknownButIgnored "message" (Just "message_deleted") = True
-isUnknownButIgnored "message" (Just "channel_purpose") = True
-isUnknownButIgnored _ _ = False
+    isUnknownButIgnored :: Text -> Maybe Text -> Bool
+    isUnknownButIgnored "message" (Just "bot_message") = True
+    isUnknownButIgnored "message" (Just "message_deleted") = True
+    isUnknownButIgnored "message" (Just "channel_purpose") = True
+    isUnknownButIgnored _ _ = False
 
 handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
