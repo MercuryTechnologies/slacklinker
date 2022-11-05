@@ -1,14 +1,16 @@
--- | == Design of Slacklinker webhooks
---
---   Slacklinker uses the [Slack Events API](https://api.slack.com/events) to
---   get real time notifications of messages.
---
---   Webhooks need to have their signature verified, which is done on the
---   endpoint handler. After this, we know that the messages were sent by Slack
---   and can be trusted.
+{- | == Design of Slacklinker webhooks
+
+   Slacklinker uses the [Slack Events API](https://api.slack.com/events) to
+   get real time notifications of messages.
+
+   Webhooks need to have their signature verified, which is done on the
+   endpoint handler. After this, we know that the messages were sent by Slack
+   and can be trusted.
+-}
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR) where
 
-import Data.Aeson (Value (Object))
+import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
+import Data.Aeson.Types (parse)
 import Data.Text qualified as T
 import Database.Persist
 import Slacklinker.App
@@ -18,9 +20,9 @@ import Slacklinker.Models
 import Slacklinker.Sender
 import Slacklinker.SplitUrl
 import Web.Slack.Experimental.Blocks
+import Web.Slack.Experimental.Events.Types
 import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, validateRequest)
 import Web.Slack.Types (TeamId (..))
-import Web.Slack.Experimental.Events.Types
 
 extractLinks :: SlackBlock -> [Text]
 extractLinks block =
@@ -142,8 +144,21 @@ handleCallback (EventChannelLeft l) teamId = do
     deleteBy $ UniqueJoinedChannel wsId l.channel
   pure $ Object mempty
 handleCallback (EventUnknown v) _ = do
-  logInfo $ "unknown webhook callback: " <> tshow v
+  case parse shouldIgnore v of
+    Success True -> pure ()
+    _ -> logInfo $ "unknown webhook callback: " <> tshow v
   pure $ Object mempty
+  where
+    shouldIgnore = withObject "webhook event" \val -> do
+      type_ <- val .: "type"
+      subtype <- val .:? "subtype"
+      pure $ isUnknownButIgnored type_ subtype
+
+    isUnknownButIgnored :: Text -> Maybe Text -> Bool
+    isUnknownButIgnored "message" (Just "bot_message") = True
+    isUnknownButIgnored "message" (Just "message_deleted") = True
+    isUnknownButIgnored "message" (Just "channel_purpose") = True
+    isUnknownButIgnored _ _ = False
 
 handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
