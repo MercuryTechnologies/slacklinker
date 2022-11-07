@@ -8,7 +8,6 @@ module Slacklinker.Sender (
   senderThread,
 ) where
 
-import Control.Monad.Extra (whenJust)
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context qualified as OTel
@@ -84,7 +83,7 @@ senderHandler loc e = do
       throwIO e
     Nothing -> do
       mspan <- OTel.lookupSpan <$> OTel.getContext
-      whenJust mspan $ \span -> OTel.recordException span [] Nothing e
+      for_ mspan $ \span -> OTel.recordException span [] Nothing e
       -- unexpected exception, log it
       putStrLn $ loc <> ": SENDER EXC: " <> pack (displayException e)
 
