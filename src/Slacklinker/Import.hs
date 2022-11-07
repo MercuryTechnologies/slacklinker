@@ -1,20 +1,19 @@
-module Slacklinker.Import
-  ( module Slacklinker.Prelude,
-    taggedOptions,
-    snakeCaseOptions,
-    snakeCaseFormOptions,
-    AesonDecodeError(..),
-    decodeThrow,
-    orThrow,
-    module Slacklinker.Tracing,
-  )
-where
+module Slacklinker.Import (
+  module Slacklinker.Prelude,
+  taggedOptions,
+  snakeCaseOptions,
+  snakeCaseFormOptions,
+  AesonDecodeError (..),
+  decodeThrow,
+  orThrow,
+  module Slacklinker.Tracing,
+) where
 
 import Data.Aeson
 import Data.Aeson qualified as A
 import Slacklinker.Exceptions
 import Slacklinker.Prelude
-import Slacklinker.Tracing (inSpan, defaultSpanArguments)
+import Slacklinker.Tracing
 import Web.FormUrlEncoded (FormOptions, defaultFormOptions)
 import Web.FormUrlEncoded qualified as F
 
