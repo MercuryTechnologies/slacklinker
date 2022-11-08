@@ -6,7 +6,9 @@ import Slacklinker.Import
 import Slacklinker.PersistImport
 
 data SlacklinkerSetting (a :: SlacklinkerSettingTag) where
+  -- | Whether to allow any access to register new workspaces.
   SettingAllowRegistration :: Bool -> SlacklinkerSetting 'AllowRegistration
+  -- | Not implemented yet!
   SettingRequireMutualTLS :: Bool -> SlacklinkerSetting 'RequireMutualTLS
 
 data SlacklinkerSettingTag = AllowRegistration | RequireMutualTLS
