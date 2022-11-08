@@ -51,6 +51,7 @@ workspaceMetaFromWorkspaceE (Entity wsId ws) =
 
 makeMessage :: Entity Workspace -> MessageEvent -> SlackUrlParts -> Maybe SendMessageReq
 makeMessage wsE@(Entity _ ws) msgEv SlackUrlParts {..} = do
+  guard $ not linkedMessageIsInSameThread
   messageContent <- mMessageContent
   pure
     SendMessageReq
@@ -60,6 +61,10 @@ makeMessage wsE@(Entity _ ws) msgEv SlackUrlParts {..} = do
       , workspaceMeta = workspaceMetaFromWorkspaceE wsE
       }
   where
+    -- If you link a message in the same thread as it is in, it doesn't make
+    -- any sense to reply to that thread since it will just add noise.
+    linkedMessageIsInSameThread = Just messageTs == msgEv.threadTs
+
     referencerSUP =
       SlackUrlParts
         { channelId = msgEv.channel
