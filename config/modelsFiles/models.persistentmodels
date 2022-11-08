@@ -7,6 +7,8 @@ Workspace sql=workspaces
   slackTeamId TeamId
   slackOauthToken SlackToken
 
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
   UniqueWorkspaceSlackId slackTeamId sql=workspaces_slack_id_key
 
   deriving Show Eq Generic
@@ -15,6 +17,8 @@ JoinedChannel sql=joined_channels
   Id UUID default=uuid_generate_v1mc()
   workspaceId WorkspaceId
   channelId ConversationId
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
   UniqueJoinedChannel workspaceId channelId sql=joined_channels_workspace_channel_key
 
 -- | \"state\" parameters we have given to Slack
@@ -35,3 +39,5 @@ Setting sql=settings
   -- picked the former. This kind of table is kinda recommended against in
   -- "The Art of PostgreSQL", but I'm not sure how to make it row-wise otherwise.
   content (JSONB Value)
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
