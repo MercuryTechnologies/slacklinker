@@ -10,7 +10,7 @@
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR) where
 
 import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
-import Data.Aeson.Types (parse)
+import Data.Aeson.Types (parse, Parser)
 import Data.Text qualified as T
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
@@ -150,23 +150,19 @@ handleCallback (EventChannelLeft l) teamId _ = do
 handleCallback (EventUnknown v) _ span = do
   case parse typeAndSubtype v of
     Success (type_, subtype) -> do
-      unless (isUnknownButIgnored type_ subtype) logUnknown
       addAttribute span "slack.event.type" type_
       addAttribute span "slack.event.subtype" (fromMaybe "" subtype)
+      logUnknown
     _ -> logUnknown
   pure $ Object mempty
   where
-    logUnknown = logInfo $ "unknown webhook callback: " <> tshow v
+    logUnknown = logDebug $ "unknown webhook callback: " <> tshow v
+
+    typeAndSubtype :: Value -> Parser (Text, Maybe Text)
     typeAndSubtype = withObject "webhook event" \val -> do
       type_ <- val .: "type"
       subtype <- val .:? "subtype"
       pure (type_, subtype)
-
-    isUnknownButIgnored :: Text -> Maybe Text -> Bool
-    isUnknownButIgnored "message" (Just "bot_message") = True
-    isUnknownButIgnored "message" (Just "message_deleted") = True
-    isUnknownButIgnored "message" (Just "channel_purpose") = True
-    isUnknownButIgnored _ _ = False
 
 handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
