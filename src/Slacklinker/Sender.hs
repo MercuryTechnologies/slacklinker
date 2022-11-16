@@ -10,6 +10,7 @@ module Slacklinker.Sender (
 ) where
 
 import Data.Vector qualified as V
+import Database.Esqueleto.Experimental qualified as E
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context qualified as OTel
@@ -17,10 +18,13 @@ import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import OpenTelemetry.Trace (addAttribute)
 import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp, appSlackConfig, runDB)
+import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Slack.ConversationsJoin
+import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Slacklinker.Types (SlackToken)
+import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
 import System.IO.Unsafe (unsafePerformIO)
 import Web.Slack (SlackConfig, chatPostMessage, conversationsListAll)
 import Web.Slack.Chat (PostMsgReq (..), mkPostMsgReq)
@@ -77,6 +81,7 @@ data SenderRequest
     -- <https://api.slack.com/events/member_joined_channel> and add a new
     -- scheduled task?
     ReqUpdateJoined WorkspaceMeta ConversationId
+  | UpdateReply RepliedThreadId
   | RequestTerminate
   deriving stock (Show, Generic)
 
@@ -203,6 +208,48 @@ doJoinAll wsInfo cid = do
 
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
+draftMessage :: Workspace -> [(LinkedMessage, ChannelMetadata)] -> Text
+draftMessage workspace links =
+  let linksText = mapMaybe toLink links
+   in makeMessage linksText
+  where
+    makeUrl :: Text -> Text -> SlackUrlParts -> Maybe Text
+    makeUrl channelName slackSubdomain urlParts = do
+      url <- buildSlackUrl slackSubdomain urlParts
+      -- We drop the https:// prefix to cause Slack to not render a preview,
+      -- since their previews waste a lot of space. See
+      -- https://linear.app/mercury/issue/DUX-950/improve-link-previews
+      let url' = dropPrefix "https://" url
+      pure $ concat ["[In #", channelName, "](", url', ")"]
+
+    toLink :: (LinkedMessage, ChannelMetadata) -> Maybe Text
+    toLink (LinkedMessage {messageTs, threadTs}, channelMetadata) =
+      makeUrl
+        channelMetadata.name
+        workspace.slackSubdomain
+        SlackUrlParts {messageTs, channelId = channelMetadata.conversationId, threadTs}
+
+    makeMessage :: [Text] -> Text
+    makeMessage linksToInclude =
+      let linksList = unlines $ map ("* " <>) linksToInclude
+       in "This message was linked elsewhere:\n" <> linksList
+
+doUpdateReply :: (HasApp m, MonadIO m) => RepliedThreadId -> m ()
+doUpdateReply r = do
+  -- FIXME(jadel): do locking in case someone runs a high availability slack
+  -- bot cluster
+  (repliedThread, workspace, links) <- runDB $ do
+    repliedThread <- getJust r
+    links <- E.select $ linkedMessagesInThread r
+    Entity _ workspace <-
+      E.selectOne (workspaceByRepliedThreadId r)
+        >>= flip orThrow (SlacklinkerBug "workspace does not exist for a replied thread ID")
+    pure (repliedThread, workspace, links)
+
+  let message = draftMessage workspace (map (bimap entityVal entityVal) links)
+
+  pure ()
+
 handleTodo :: SenderRequest -> AppM ()
 handleTodo r =
   let conName = conNameOf r
@@ -220,6 +267,8 @@ handleTodo r =
         ReqUpdateJoined wsInfo cid -> do
           addWorkspaceInfo span wsInfo
           doUpdateJoined wsInfo cid
+        UpdateReply r -> do
+          doUpdateReply r
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId

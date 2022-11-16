@@ -75,6 +75,7 @@
                 ngrok
                 sqlite
                 refinery-cli
+                postgresql
                 pgformatter # executable is called pg_format
               ]);
               # Change the prompt to show that you are in a devShell
@@ -91,6 +92,10 @@
             build = import ./nix/build.nix {
               inherit prev final hfinal hprev;
               werror = true;
+              testToolDepends = [
+                final.postgresql
+                final.refinery-cli
+              ];
             };
             slacklinker = hprev.callCabal2nix "slacklinker" ./. { };
           in
@@ -99,6 +104,8 @@
             slack-web = hprev.callCabal2nix "slack-web" slack-web { };
             # possible macOS lack-of-sandbox related breakage
             http2 = if prev.stdenv.isDarwin then hlib.dontCheck hprev.http2 else hprev.http2;
+            # some kinda weird test issues on macOS
+            port-utils = hlib.dontCheck hprev.port-utils;
           });
       };
     };

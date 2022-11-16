@@ -31,6 +31,96 @@ Nonce sql=nonces
   -- | When it can be deleted (Slack doesn't give us more than 10min for the flow)
   expiresAt UTCTime
 
+-- | Known metadata on a channel; updated when we get a message event with a
+-- link from such a channel. This is used so we can name where a message was
+-- linked from.
+ChannelMetadata sql=channel_metadata
+  Id UUID default=uuid_generate_v1mc()
+  workspaceId WorkspaceId
+  conversationId ConversationId
+
+  name Text
+
+  UniqueChannelMetadata workspaceId conversationId sql=unique_channel_metadata
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | Thread we've replied to.
+--
+-- For clarity, a message a human sends with content
+-- > "blah blah https://someworkspace.slack.com/archive/C0123/..."
+-- in a channel C0789 will create:
+-- * a RepliedThread with @channelId = "C0123"@
+-- * a LinkedMessage with @channelId = "C0789"@
+--
+-- The design of reply combining is like so:
+-- * Incoming message that needs linking
+-- |> Create RepliedThread with on conflict ignore
+-- |> Create LinkedMessage for the link also with on conflict ignore; sent=False
+-- |> Schedule UpdateReply {repliedThreadId} task
+--
+-- * UpdateReply {repliedThreadId}
+-- |> FIXME(concurrency): advisory-lock the RepliedThread
+-- |> Either post a new message or edit the existing one depending on replyTs
+--    null state
+-- |> Update the RepliedThread with the new ts
+RepliedThread sql=replied_threads
+  Id UUID default=uuid_generate_v1mc()
+  workspaceId WorkspaceId
+
+  -- | The ts (message id) of the message we sent in that thread
+  --
+  --   This is absent if we have not actually sent one yet (which happens
+  --   between the receipt of a message and the scheduled UpdateReply completing)
+  replyTs Text Maybe
+
+  -- | The channel ID that both our message and the message we replied to are in.
+  --   This is not a ChannelMetadataId since we don't currently fetch channel
+  --   metadata of link targets; we just rather blindly message them.
+  conversationId ConversationId
+
+  -- | The ts (message id) of the message we are threaded under
+  threadTs Text
+  -- | The triple of (workspaceId, conversationId, threadTs) uniquely identify
+  --   one message we replied to
+  UniqueRepliedThread workspaceId conversationId threadTs sql=unique_replied_thread
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+  deriving Show
+
+-- | One message linked within a particular thread. There may be many of these
+--   per thread we reply to.
+--
+-- The columns here represent the URL *inside* the reply Slacklinker will send
+LinkedMessage sql=linked_messages
+  Id UUID default=uuid_generate_v1mc()
+  repliedThreadId RepliedThreadId
+  -- | Channel that the message was linked from.
+  channelMetadataId ChannelMetadataId
+
+  -- | Slack URL parts: message ts
+  messageTs Text
+
+  -- | Slack URL parts: enclosing thread
+  threadTs Text Maybe
+
+  -- | NOTE: this index is cursed: (tid, cid, messageTs, NULL) can appear
+  -- multiple times, which Persistent warns hard on, so we use @!force@.
+  -- Because of this fun SQL behaviour, we have an extra unique index
+  -- @unique_linked_message_null@ to deal with that one; see the migration file.
+  UniqueLinkedMessage repliedThreadId channelMetadataId messageTs threadTs sql=unique_linked_message !force
+
+  -- | Whether this message has been sent yet
+  sent Bool
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+  deriving Show Eq
+
 -- | Just put the app settings in the DB.
 Setting sql=settings
   Id UUID default=uuid_generate_v1mc()

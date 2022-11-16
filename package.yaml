@@ -36,6 +36,7 @@ dependencies:
   - pcre-heavy
   - persistent
   - persistent-postgresql
+  - postgres-options
   - pretty-simple
   - resource-pool
   - safe
@@ -50,8 +51,10 @@ dependencies:
   - text
   - th-abstraction
   - time
+  - transformers
   - typed-process
   - unliftio
+  - unordered-containers
   - uri-bytestring
   - uuid
   - vector
@@ -90,6 +93,7 @@ tests:
       - hspec-expectations
       - hspec-golden >= 0.2
       - HUnit
+      - tmp-postgres
       - slacklinker
 
   test-dev:
@@ -109,6 +113,7 @@ tests:
       - hspec-expectations
       - hspec-golden >= 0.2
       - HUnit
+      - tmp-postgres
     when:
       - condition: flag(local-dev)
         then:
