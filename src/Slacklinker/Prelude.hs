@@ -11,9 +11,11 @@ module Slacklinker.Prelude (
   module Data.Default.Class,
   module Database.Persist,
   cs,
+  identity,
 ) where
 
-import ClassyPrelude hiding (Handler, delete, deleteBy, span)
+import ClassyPrelude hiding (Handler, delete, deleteBy, span, on, link2, id)
+import ClassyPrelude qualified as Prelude
 import Control.Monad.Logger.CallStack (MonadLogger (..), logDebug, logError, logInfo, logWarn)
 import Data.Aeson (FromJSON (..), ToJSON (..), defaultOptions, withObject, withText)
 import Data.Aeson.TH (deriveFromJSON, deriveJSON, deriveToJSON)
@@ -25,3 +27,6 @@ import Database.Persist (Entity (..))
 import Database.Persist.Sql (SqlPersistT)
 import Servant (FromHttpApiData (..), ToHttpApiData (..))
 import Servant.Server (Handler)
+
+identity :: t -> t
+identity = Prelude.id

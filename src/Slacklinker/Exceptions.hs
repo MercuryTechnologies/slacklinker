@@ -114,6 +114,13 @@ instance ExceptionResponse VerificationException where
     VerificationSignatureMismatch -> status401
     _ -> status400
 
+newtype SlacklinkerBug = SlacklinkerBug Text
+  deriving newtype Show
+  deriving (Exception) via DeriveServiceException SlacklinkerBug
+
+instance ExceptionResponse SlacklinkerBug where
+  status (SlacklinkerBug _) = status500
+
 errorMiddleware :: Middleware
 errorMiddleware baseApp req respond =
   baseApp req respond `catches` handlers

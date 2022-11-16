@@ -106,7 +106,7 @@ getOauthRedirectR code state = do
   teamInfoResp <- runSlack oauthResp.accessToken $ \slackConfig ->
     teamInfo slackConfig $ TeamInfoRequest {domain = Nothing, team = Just oauthResp.team.id}
 
-  runDB $
+  _ <- runDB $
     upsertBy
       (UniqueWorkspaceSlackId oauthResp.team.id)
       ( Workspace

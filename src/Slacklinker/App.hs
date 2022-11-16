@@ -11,6 +11,7 @@ module Slacklinker.App
     runDB,
     getConfiguration,
     makeApp,
+    makeApp'
   )
 where
 
@@ -23,8 +24,6 @@ import Database.Persist.SqlBackend.SqlPoolHooks
 import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS (newTlsManager)
 import OpenTelemetry.Instrumentation.Persistent qualified as OTel
-import OpenTelemetry.Trace (TracerProvider)
-import OpenTelemetry.Trace qualified as OTel
 import Slacklinker.Import
 import Slacklinker.Types (SlackClientSecret (..), SlackToken (..))
 import System.Environment (getEnv, lookupEnv)
@@ -50,14 +49,12 @@ appSlackConfig (SlackToken slackConfigToken) = do
  startup mode.
 -}
 data RuntimeInfo = RuntimeInfo
-  { tracerProvider :: TracerProvider
-  , senderAction :: Async ()
+  { senderAction :: Async ()
   , appPool :: Pool SqlBackend
   }
 
 appStartupNoSender :: App -> IO RuntimeInfo
 appStartupNoSender app = do
-  tracerProvider <- OTel.initializeGlobalTracerProvider
   -- needs to run in AppM to get our main logger
   appPool <- runAppM app $ createPostgresqlPool app.config.postgresConnectionString 5
   let senderAction = error "sender action not available, possibly because this is the sender"
@@ -65,7 +62,6 @@ appStartupNoSender app = do
 
 appShutdownNoSender :: RuntimeInfo -> IO ()
 appShutdownNoSender RuntimeInfo {..} = do
-  OTel.shutdownTracerProvider tracerProvider
   destroyAllResources appPool
 
 data App = App
@@ -139,10 +135,12 @@ getConfiguration = do
     getEnvBS a = BS.pack <$> getEnv a
 
 makeApp :: IO App
-makeApp = do
+makeApp = getConfiguration >>= makeApp'
+
+makeApp' :: AppConfig -> IO App
+makeApp' config = do
   -- FIXME(jadel): I want to instrument the HTTP manager for debugging
   -- purposes, but hs-opentelemetry does not support it.
   manager <- newTlsManager
-  config <- getConfiguration
   let runtimeInfo = error "runtime info not initialized yet. this is a bug"
   pure App {..}

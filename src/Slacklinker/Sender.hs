@@ -10,6 +10,7 @@ module Slacklinker.Sender (
 ) where
 
 import Data.Vector qualified as V
+import Database.Esqueleto.Experimental qualified as E
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context qualified as OTel
@@ -17,13 +18,16 @@ import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import OpenTelemetry.Trace (addAttribute)
 import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp, appSlackConfig, runDB)
+import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Slack.ConversationsJoin
+import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Slacklinker.Types (SlackToken)
+import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
 import System.IO.Unsafe (unsafePerformIO)
-import Web.Slack (SlackConfig, chatPostMessage, conversationsListAll)
-import Web.Slack.Chat (PostMsgReq (..), mkPostMsgReq)
+import Web.Slack (SlackConfig, chatPostMessage, chatUpdate, conversationsListAll)
+import Web.Slack.Chat (PostMsgReq (..), PostMsgRsp (..), UpdateReq (..), UpdateRsp (..), mkPostMsgReq, mkUpdateReq)
 import Web.Slack.Common (SlackClientError)
 import Web.Slack.Conversation
 import Web.Slack.Pager (loadingPage)
@@ -77,6 +81,7 @@ data SenderRequest
     -- <https://api.slack.com/events/member_joined_channel> and add a new
     -- scheduled task?
     ReqUpdateJoined WorkspaceMeta ConversationId
+  | UpdateReply RepliedThreadId
   | RequestTerminate
   deriving stock (Show, Generic)
 
@@ -203,6 +208,70 @@ doJoinAll wsInfo cid = do
 
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
+draftMessage :: Workspace -> [(LinkedMessage, JoinedChannel)] -> Text
+draftMessage workspace links =
+  let linksText = mapMaybe toLink links
+   in makeMessage linksText
+  where
+    makeUrl :: Maybe Text -> Text -> SlackUrlParts -> Maybe Text
+    makeUrl mChannelName slackSubdomain urlParts = do
+      url <- buildSlackUrl slackSubdomain urlParts
+      pure $ case mChannelName of
+        Just channelName -> concat ["<", url, "|In #", channelName, ">"]
+        Nothing -> url
+
+    toLink :: (LinkedMessage, JoinedChannel) -> Maybe Text
+    toLink (LinkedMessage {messageTs, threadTs}, joinedChannel) =
+      makeUrl
+        joinedChannel.name
+        workspace.slackSubdomain
+        SlackUrlParts {messageTs, channelId = joinedChannel.channelId, threadTs}
+
+    makeMessage :: [Text] -> Text
+    makeMessage linksToInclude =
+      let linksList = unlines $ map ("* " <>) linksToInclude
+       in "This thread was linked elsewhere:\n" <> linksList
+
+doUpdateReply :: (HasApp m, MonadIO m) => RepliedThreadId -> m ()
+doUpdateReply r = do
+  -- FIXME(jadel): do locking in case someone happens to run a high
+  -- availability slack bot cluster
+  (repliedThread, workspace, links) <- runDB $ do
+    repliedThread <- getJust r
+    links <- E.select $ linkedMessagesInThread r
+    Entity _ workspace <-
+      E.selectOne (workspaceByRepliedThreadId r)
+        >>= flip orThrow (SlacklinkerBug "workspace does not exist for a replied thread ID")
+    pure (repliedThread, workspace, links)
+
+  let message = draftMessage workspace (map (bimap entityVal entityVal) links)
+
+  ts <-
+    sendOrReplaceSlackMessage
+      workspace.slackOauthToken
+      (repliedThread.conversationId, repliedThread.threadTs, repliedThread.replyTs)
+      message
+
+  runDB $ update r [RepliedThreadReplyTs =. Just ts]
+  where
+    sendOrReplaceSlackMessage token (conversationId, _threadTs, Just ts) content =
+      updateRspTs <$> runSlack token \slackConfig ->
+        chatUpdate
+          slackConfig
+          ( (mkUpdateReq conversationId ts)
+              { updateReqText = Just content
+              }
+          )
+    sendOrReplaceSlackMessage token (conversationId, threadTs, Nothing) content =
+      postMsgRspTs <$> runSlack token \slackConfig ->
+        chatPostMessage
+          slackConfig
+          ( (mkPostMsgReq conversationId.unConversationId content)
+              { postMsgReqThreadTs = Just threadTs
+              , postMsgReqUnfurlLinks = Just False
+              }
+          )
+
 handleTodo :: SenderRequest -> AppM ()
 handleTodo r =
   let conName = conNameOf r
@@ -220,6 +289,8 @@ handleTodo r =
         ReqUpdateJoined wsInfo cid -> do
           addWorkspaceInfo span wsInfo
           doUpdateJoined wsInfo cid
+        UpdateReply replyId -> do
+          doUpdateReply replyId
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId
@@ -227,7 +298,7 @@ handleTodo r =
 senderThread :: AppM ()
 senderThread = forever $ do
   SenderEnvelope {request, otelContext} <- atomically $ readTChan senderChan
-  OTel.attachContext otelContext
+  void $ OTel.attachContext otelContext
 
   logDebug $ "SENDER: " <> tshow request
 

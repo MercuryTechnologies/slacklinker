@@ -3,7 +3,7 @@ module Main where
 import Data.Function ((&))
 import Network.Wai.Handler.Warp (defaultSettings, runSettings, setHost, setPort)
 import OpenTelemetry.Instrumentation.Wai (newOpenTelemetryWaiMiddleware)
-import Slacklinker.App (App (..), RuntimeInfo (..), appStartupNoSender, makeApp, runAppM, appShutdownNoSender)
+import Slacklinker.App (App (..), RuntimeInfo (..), appShutdownNoSender, appStartupNoSender, makeApp, runAppM)
 import Slacklinker.Application
 import Slacklinker.Exceptions
 import Slacklinker.Import
@@ -20,7 +20,7 @@ appStartup app = do
 
 appShutdown :: RuntimeInfo -> IO ()
 appShutdown rtInfo@RuntimeInfo {..} = do
-  senderEnqueue $ RequestTerminate
+  senderEnqueue RequestTerminate
   didFinish <- timeout 1000 $ wait senderAction
 
   case didFinish of
@@ -32,9 +32,10 @@ appShutdown rtInfo@RuntimeInfo {..} = do
 main :: IO ()
 main = do
   app_ <- makeApp
-  bracket
-    (appStartup app_)
-    appShutdown
+  withGlobalTracing
+    $ bracket
+      (appStartup app_)
+      appShutdown
     $ \rti -> do
       let app = app_ {runtimeInfo = rti}
       let waiApp_ = application app
@@ -43,4 +44,4 @@ main = do
 
       let settings = defaultSettings & setHost "127.0.0.1" & setPort 4040
       putStrLn "Startup! Listening on 127.0.0.1:4040"
-      runSettings settings $ waiApp
+      runSettings settings waiApp
