@@ -17,6 +17,7 @@ JoinedChannel sql=joined_channels
   Id UUID default=uuid_generate_v1mc()
   workspaceId WorkspaceId
   channelId ConversationId
+  name Text Maybe
   createdAt UTCTime MigrationOnly
   updatedAt UTCTime MigrationOnly
   UniqueJoinedChannel workspaceId channelId sql=joined_channels_workspace_channel_key

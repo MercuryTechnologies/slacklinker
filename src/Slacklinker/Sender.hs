@@ -1,5 +1,6 @@
 module Slacklinker.Sender (
   WorkspaceMeta (..),
+  workspaceMetaFromWorkspaceE,
   SenderRequest (..),
   SendMessageReq (..),
   senderEnqueue,
@@ -8,6 +9,7 @@ module Slacklinker.Sender (
   senderThread,
 ) where
 
+import Data.Vector qualified as V
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context qualified as OTel
@@ -25,6 +27,7 @@ import Web.Slack.Chat (PostMsgReq (..), mkPostMsgReq)
 import Web.Slack.Common (SlackClientError)
 import Web.Slack.Conversation
 import Web.Slack.Pager (loadingPage)
+import Web.Slack.UsersConversations (usersConversationsAll)
 
 data WorkspaceMeta = WorkspaceMeta
   { token :: SlackToken
@@ -32,6 +35,14 @@ data WorkspaceMeta = WorkspaceMeta
   , slackTeamId :: TeamId
   }
   deriving stock (Show)
+
+workspaceMetaFromWorkspaceE :: Entity Workspace -> WorkspaceMeta
+workspaceMetaFromWorkspaceE (Entity wsId ws) =
+  WorkspaceMeta
+    { slackTeamId = ws.slackTeamId
+    , workspaceId = wsId
+    , token = ws.slackOauthToken
+    }
 
 data SendMessageReq = SendMessageReq
   { replyToTs :: Maybe Text
@@ -57,6 +68,15 @@ data SenderRequest
   | -- | Join all public non-archived channels in the workspace. The provided
     -- ConversationId is for feedback to the user.
     ReqJoinAll WorkspaceMeta ConversationId
+  | -- | Update joined channel metadata. Required to make link previews include
+    -- channels. This is a one-off fixup: when Slacklinker joins new channels
+    -- with join_all, it will gather this metadata.
+    --
+    -- FIXME(jadel): If you manually join slacklinker to a channel, the metadata
+    -- will probably also be outdated? Maybe we need to subscribe to
+    -- <https://api.slack.com/events/member_joined_channel> and add a new
+    -- scheduled task?
+    ReqUpdateJoined WorkspaceMeta ConversationId
   | RequestTerminate
   deriving stock (Show, Generic)
 
@@ -100,20 +120,32 @@ doSendMessage req = do
 
 doJoinChannel :: (MonadIO m, HasApp m) => WorkspaceMeta -> ConversationId -> m ()
 doJoinChannel ws cid = do
-  _joinResp <- runSlack ws.token \slackConfig ->
+  joinResp <- runSlack ws.token \slackConfig ->
     conversationsJoin slackConfig $ ConversationJoinRequest {channel = cid}
-  runDB $ insert_ $ JoinedChannel {workspaceId = ws.workspaceId, channelId = cid}
+  let name = case joinResp.channel of
+        Channel c -> Just c.channelName
+        -- This case should never be hit since Slacklinker doesn't operate
+        -- in DMs or groups.
+        _ -> Nothing
+  runDB $ insert_ $ JoinedChannel {workspaceId = ws.workspaceId, channelId = cid, name}
   pure ()
 
--- I think I don't actually need this due to isMember on the conversations list thing!
--- fetchMemberConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
--- fetchMemberConversations wsInfo = do
---   slackConfig <- appSlackConfig wsInfo.token
---   list_ <- liftIO $ usersConversationsAll slackConfig def
---   liftIO $ loadingPage list_ convertPage
---   where
---     convertPage resp =
---       fromList @(Vector _) <$> fromEither resp
+fetchMemberConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
+fetchMemberConversations wsInfo = do
+  slackConfig <- appSlackConfig wsInfo.token
+  list_ <- liftIO $ usersConversationsAll slackConfig def
+  liftIO $ loadingPage list_ convertPage
+  where
+    convertPage resp =
+      fromList @(Vector _) <$> fromEither resp
+
+doUpdateJoined :: (HasApp m, MonadIO m) => WorkspaceMeta -> ConversationId -> m ()
+doUpdateJoined wsInfo cid = do
+  logMessage "Updating metadata"
+  doUpdateJoined'
+  logMessage "Done!"
+  where
+    logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
 fetchAllConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
 fetchAllConversations wsInfo = do
@@ -171,6 +203,9 @@ handleTodo r =
         ReqJoinAll wsInfo cid -> do
           addWorkspaceInfo span wsInfo
           doJoinAll wsInfo cid
+        ReqUpdateJoined wsInfo cid -> do
+          addWorkspaceInfo span wsInfo
+          doUpdateJoined wsInfo cid
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId
