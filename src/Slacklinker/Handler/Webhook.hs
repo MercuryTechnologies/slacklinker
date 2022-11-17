@@ -10,13 +10,13 @@
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR) where
 
 import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
-import Data.Aeson.Types (parse, Parser)
-import Data.Text qualified as T
+import Data.Aeson.Types (Parser, parse)
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Span, addAttribute)
 import Slacklinker.App
 import Slacklinker.Exceptions
+import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Sender
@@ -40,14 +40,6 @@ extractLinks block =
 
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
     fromRichItem _ = []
-
-workspaceMetaFromWorkspaceE :: Entity Workspace -> WorkspaceMeta
-workspaceMetaFromWorkspaceE (Entity wsId ws) =
-  WorkspaceMeta
-    { slackTeamId = ws.slackTeamId
-    , workspaceId = wsId
-    , token = ws.slackOauthToken
-    }
 
 makeMessage :: Entity Workspace -> MessageEvent -> SlackUrlParts -> Maybe SendMessageReq
 makeMessage wsE@(Entity _ ws) msgEv SlackUrlParts {..} = do
@@ -76,25 +68,6 @@ makeMessage wsE@(Entity _ ws) msgEv SlackUrlParts {..} = do
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
 
-data ImCommand
-  = Help
-  | JoinAll
-  deriving stock (Show)
-
-parseImCommand :: Text -> ImCommand
-parseImCommand rawText = go $ T.strip rawText
-  where
-    go "help" = Help
-    go "join_all" = JoinAll
-    go _ = Help
-
-helpMessage :: Text
-helpMessage =
-  unlines
-    [ "Welcome to Slacklinker. Here are the commands you can use:"
-    , "* `join_all` - Join all public channels"
-    ]
-
 handleMessage :: (HasApp m, MonadIO m) => MessageEvent -> TeamId -> m ()
 handleMessage ev teamId = do
   workspace <- workspaceByTeamId teamId
@@ -107,19 +80,7 @@ handleMessage ev teamId = do
       forM_ todos $ \todo -> do
         senderEnqueue $ SendMessage todo
     Im -> do
-      let cmd = parseImCommand ev.text
-      case cmd of
-        Help ->
-          senderEnqueue . SendMessage $
-            SendMessageReq
-              { replyToTs = Nothing
-              , channel = ev.channel
-              , messageContent = helpMessage
-              , workspaceMeta = workspaceMetaFromWorkspaceE workspace
-              }
-        JoinAll -> senderEnqueue $ ReqJoinAll (workspaceMetaFromWorkspaceE workspace) ev.channel
-
-      pure ()
+      handleImCommand (workspaceMetaFromWorkspaceE workspace) ev.channel ev.text
     Group ->
       -- we don't do these
       pure ()

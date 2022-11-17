@@ -54,6 +54,7 @@ dependencies:
   - unliftio
   - uri-bytestring
   - uuid
+  - vector
   - wai
   - warp
 
