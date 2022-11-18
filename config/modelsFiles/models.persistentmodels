@@ -31,21 +31,6 @@ Nonce sql=nonces
   -- | When it can be deleted (Slack doesn't give us more than 10min for the flow)
   expiresAt UTCTime
 
--- | Known metadata on a channel; updated when we get a message event with a
--- link from such a channel. This is used so we can name where a message was
--- linked from.
-ChannelMetadata sql=channel_metadata
-  Id UUID default=uuid_generate_v1mc()
-  workspaceId WorkspaceId
-  conversationId ConversationId
-
-  name Text
-
-  UniqueChannelMetadata workspaceId conversationId sql=unique_channel_metadata
-
-  createdAt UTCTime MigrationOnly
-  updatedAt UTCTime MigrationOnly
-
 -- | Thread we've replied to.
 --
 -- For clarity, a message a human sends with content
@@ -98,8 +83,9 @@ RepliedThread sql=replied_threads
 LinkedMessage sql=linked_messages
   Id UUID default=uuid_generate_v1mc()
   repliedThreadId RepliedThreadId
+
   -- | Channel that the message was linked from.
-  channelMetadataId ChannelMetadataId
+  joinedChannelId JoinedChannelId
 
   -- | Slack URL parts: message ts
   messageTs Text
@@ -111,7 +97,7 @@ LinkedMessage sql=linked_messages
   -- multiple times, which Persistent warns hard on, so we use @!force@.
   -- Because of this fun SQL behaviour, we have an extra unique index
   -- @unique_linked_message_null@ to deal with that one; see the migration file.
-  UniqueLinkedMessage repliedThreadId channelMetadataId messageTs threadTs sql=unique_linked_message !force
+  UniqueLinkedMessage repliedThreadId joinedChannelId messageTs threadTs sql=unique_linked_message !force
 
   -- | Whether this message has been sent yet
   sent Bool

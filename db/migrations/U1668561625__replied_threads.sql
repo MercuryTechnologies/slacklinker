@@ -37,22 +37,20 @@ create trigger replied_threads_update
 execute procedure update_timestamps();
 
 create table "linked_messages" (
-  "id" uuid
-    primary key
-    unique default uuid_generate_v1mc(),
-  "replied_thread_id" uuid not null,
-  "conversation_id" varchar not null,
-  "message_ts" varchar not null,
-  "thread_ts" varchar null,
-  "sent" boolean not null,
-  "created_at" timestamp with time zone not null,
-  "updated_at" timestamp with time zone not null
+    "id" uuid primary key unique default uuid_generate_v1mc (),
+    "replied_thread_id" uuid not null,
+    "joined_channel_id" uuid not null,
+    "message_ts" varchar not null,
+    "thread_ts" varchar null,
+    "sent" boolean not null,
+    "created_at" timestamp with time zone not null,
+    "updated_at" timestamp with time zone not null
 );
 
 alter table "linked_messages"
   add constraint "unique_linked_message"
     unique ("replied_thread_id",
-            "conversation_id", "message_ts", "thread_ts");
+            "joined_channel_id", "message_ts", "thread_ts");
 
 -- Unique constraint behaviour in the presence of nulls is to allow
 -- multiple nulls when the rest of the constraint matches. This is
@@ -61,7 +59,7 @@ alter table "linked_messages"
 -- https://www.enterprisedb.com/postgres-tutorials/postgresql-unique-constraint-null-allowing-only-one-null
 create unique index "unique_linked_message_null" on "linked_messages"
   ("replied_thread_id",
-   "conversation_id", "message_ts",
+   "joined_channel_id", "message_ts",
    ("thread_ts" is null)) where "thread_ts" is null;
 
 alter table "linked_messages"
@@ -72,6 +70,11 @@ alter table "linked_messages"
       on delete
         restrict
       on update restrict;
+
+alter table "linked_messages"
+    add constraint "linked_messages_joined_channel_id_fkey" foreign key
+	("joined_channel_id") references "joined_channels" ("id") on delete
+	restrict on update restrict;
 
 create trigger linked_messages_insert
   before insert

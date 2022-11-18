@@ -10,7 +10,6 @@
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage) where
 
 import Control.Monad.Extra (mapMaybeM)
-import Control.Monad.Trans.Maybe
 import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Database.Persist
@@ -83,39 +82,56 @@ recordLink ::
   (HasApp m, MonadIO m) =>
   WorkspaceId ->
   SlackUrlParts ->
-  (Text, SlackUrlParts) ->
-  m RepliedThreadId
-recordLink workspaceId linkSource (destinationChannelName, linkDestination) = do
-  runDB $ do
-    Entity repliedThreadId _ <-
-      upsertBy
-        (UniqueRepliedThread workspaceId linkDestination.channelId linkDestination.messageTs)
-        RepliedThread
-          { workspaceId
-          , replyTs = Nothing
-          , -- Destination of the link
-            conversationId = linkDestination.channelId
-          , threadTs = linkDestination.messageTs
-          }
-        []
-    Entity channelMetadataId _ <-
-      upsertBy
-        (UniqueChannelMetadata workspaceId linkDestination.channelId)
-        ChannelMetadata {workspaceId, name = destinationChannelName, conversationId = linkDestination.channelId}
-        []
-    -- We ignore unique violations here on purpose: if it's already been noted,
-    -- we don't care.
-    void $
-      insertBy
-        LinkedMessage
-          { repliedThreadId
-          , -- The message event is the source of the link
-            channelMetadataId
-          , messageTs = linkSource.messageTs
-          , threadTs = linkSource.threadTs
-          , sent = False
-          }
-    pure repliedThreadId
+  SlackUrlParts ->
+  m (Maybe RepliedThreadId)
+recordLink workspaceId linkSource linkDestination = do
+  if isInSameThread linkSource linkDestination
+    then pure Nothing
+    else do
+      runDB $ do
+        Entity repliedThreadId _ <-
+          upsertBy
+            (UniqueRepliedThread workspaceId linkDestination.channelId linkDestination.messageTs)
+            RepliedThread
+              { workspaceId
+              , replyTs = Nothing
+              , -- Destination of the link
+                conversationId = linkDestination.channelId
+              , threadTs = linkDestination.messageTs
+              }
+            []
+
+        Entity joinedChannelId _ <-
+          upsertBy
+            (UniqueJoinedChannel workspaceId linkSource.channelId)
+            JoinedChannel {workspaceId, name = Nothing, channelId = linkSource.channelId}
+            []
+        -- We ignore unique violations here on purpose: if it's already been noted,
+        -- we don't care.
+        void $
+          insertBy
+            LinkedMessage
+              { repliedThreadId
+              , -- The message event is the source of the link
+                joinedChannelId
+              , messageTs = linkSource.messageTs
+              , threadTs = linkSource.threadTs
+              , sent = False
+              }
+        pure $ Just repliedThreadId
+  where
+    isJustAndEqual a b = fromMaybe False (liftM2 (==) a b)
+    isInSameThread link1 link2 =
+      link1.channelId == link2.channelId
+        && (
+             -- link2 is the thread parent of link1
+             link1.threadTs == Just link2.messageTs
+              ||
+              -- link1 is the thread parent of link2
+              link2.threadTs == Just link1.messageTs
+              -- both are children of the same thread
+              || (link1.threadTs `isJustAndEqual` link2.threadTs)
+           )
 
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
@@ -131,22 +147,21 @@ handleMessage ev teamId = do
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
       forM_ repliedThreadIds $ \todo -> do
-        senderEnqueue $ UpdateReply todo
+        for_ todo $ senderEnqueue . UpdateReply
     Im -> do
       handleImCommand (workspaceMetaFromWorkspaceE workspace) ev.channel ev.text
     Group ->
       -- we don't do these
       pure ()
   where
-    handleUrl workspaceId url = runMaybeT $ do
-      linkDestination <- MaybeT . pure $ splitSlackUrl url
+    handleUrl workspaceId url = do
       let linkSource =
             SlackUrlParts
               { channelId = ev.channel
               , messageTs = ev.ts
               , threadTs = ev.threadTs
               }
-      lift $ recordLink workspaceId linkSource (undefined, linkDestination)
+      for (splitSlackUrl url) $ recordLink workspaceId linkSource
 
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do

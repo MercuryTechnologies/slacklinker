@@ -13,7 +13,7 @@ module Slacklinker.Prelude (
   cs,
 ) where
 
-import ClassyPrelude hiding (Handler, delete, deleteBy, span, on)
+import ClassyPrelude hiding (Handler, delete, deleteBy, span, on, link2)
 import Control.Monad.Logger.CallStack (MonadLogger (..), logDebug, logError, logInfo, logWarn)
 import Data.Aeson (FromJSON (..), ToJSON (..), defaultOptions, withObject, withText)
 import Data.Aeson.TH (deriveFromJSON, deriveJSON, deriveToJSON)

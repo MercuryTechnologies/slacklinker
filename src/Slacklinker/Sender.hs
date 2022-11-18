@@ -26,8 +26,8 @@ import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Slacklinker.Types (SlackToken)
 import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
 import System.IO.Unsafe (unsafePerformIO)
-import Web.Slack (SlackConfig, chatPostMessage, conversationsListAll)
-import Web.Slack.Chat (PostMsgReq (..), mkPostMsgReq)
+import Web.Slack (SlackConfig, chatPostMessage, chatUpdate, conversationsListAll)
+import Web.Slack.Chat (PostMsgReq (..), PostMsgRsp (..), UpdateReq (..), UpdateRsp (..), mkPostMsgReq, mkUpdateReq)
 import Web.Slack.Common (SlackClientError)
 import Web.Slack.Conversation
 import Web.Slack.Pager (loadingPage)
@@ -208,26 +208,28 @@ doJoinAll wsInfo cid = do
 
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
-draftMessage :: Workspace -> [(LinkedMessage, ChannelMetadata)] -> Text
+draftMessage :: Workspace -> [(LinkedMessage, JoinedChannel)] -> Text
 draftMessage workspace links =
   let linksText = mapMaybe toLink links
    in makeMessage linksText
   where
-    makeUrl :: Text -> Text -> SlackUrlParts -> Maybe Text
-    makeUrl channelName slackSubdomain urlParts = do
+    makeUrl :: Maybe Text -> Text -> SlackUrlParts -> Maybe Text
+    makeUrl mChannelName slackSubdomain urlParts = do
       url <- buildSlackUrl slackSubdomain urlParts
       -- We drop the https:// prefix to cause Slack to not render a preview,
       -- since their previews waste a lot of space. See
       -- https://linear.app/mercury/issue/DUX-950/improve-link-previews
       let url' = dropPrefix "https://" url
-      pure $ concat ["[In #", channelName, "](", url', ")"]
+      pure $ case mChannelName of
+        Just channelName -> concat ["[In #", channelName, "](", url', ")"]
+        Nothing -> url'
 
-    toLink :: (LinkedMessage, ChannelMetadata) -> Maybe Text
-    toLink (LinkedMessage {messageTs, threadTs}, channelMetadata) =
+    toLink :: (LinkedMessage, JoinedChannel) -> Maybe Text
+    toLink (LinkedMessage {messageTs, threadTs}, joinedChannel) =
       makeUrl
-        channelMetadata.name
+        joinedChannel.name
         workspace.slackSubdomain
-        SlackUrlParts {messageTs, channelId = channelMetadata.conversationId, threadTs}
+        SlackUrlParts {messageTs, channelId = joinedChannel.channelId, threadTs}
 
     makeMessage :: [Text] -> Text
     makeMessage linksToInclude =
@@ -248,7 +250,30 @@ doUpdateReply r = do
 
   let message = draftMessage workspace (map (bimap entityVal entityVal) links)
 
-  pure ()
+  ts <-
+    sendOrReplaceSlackMessage
+      workspace.slackOauthToken
+      (repliedThread.conversationId, repliedThread.threadTs, repliedThread.replyTs)
+      message
+
+  runDB $ update r [RepliedThreadReplyTs =. Just ts]
+  where
+    sendOrReplaceSlackMessage token (conversationId, _threadTs, Just ts) content =
+      updateRspTs <$> runSlack token \slackConfig ->
+        chatUpdate
+          slackConfig
+          ( (mkUpdateReq conversationId ts)
+              { updateReqText = Just content
+              }
+          )
+    sendOrReplaceSlackMessage token (conversationId, threadTs, Nothing) content =
+      postMsgRspTs <$> runSlack token \slackConfig ->
+        chatPostMessage
+          slackConfig
+          ( (mkPostMsgReq conversationId.unConversationId content)
+              { postMsgReqThreadTs = Just threadTs
+              }
+          )
 
 handleTodo :: SenderRequest -> AppM ()
 handleTodo r =
@@ -267,8 +292,8 @@ handleTodo r =
         ReqUpdateJoined wsInfo cid -> do
           addWorkspaceInfo span wsInfo
           doUpdateJoined wsInfo cid
-        UpdateReply r -> do
-          doUpdateReply r
+        UpdateReply replyId -> do
+          doUpdateReply replyId
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId

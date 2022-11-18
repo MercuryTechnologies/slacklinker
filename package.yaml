@@ -88,13 +88,14 @@ tests:
       - -O0
 
     dependencies:
+      - HUnit
+      - hs-opentelemetry-instrumentation-hspec
       - hspec
       - hspec-core
       - hspec-expectations
       - hspec-golden >= 0.2
-      - HUnit
-      - tmp-postgres
       - slacklinker
+      - tmp-postgres
 
   test-dev:
     main: Main.hs
@@ -108,11 +109,12 @@ tests:
       - test
       - src
     dependencies:
+      - HUnit
+      - hs-opentelemetry-instrumentation-hspec
       - hspec
       - hspec-core
       - hspec-expectations
       - hspec-golden >= 0.2
-      - HUnit
       - tmp-postgres
     when:
       - condition: flag(local-dev)
