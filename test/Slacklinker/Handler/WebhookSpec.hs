@@ -4,7 +4,6 @@ import Database.Persist
 import Slacklinker.App (runAppM, runDB)
 import Slacklinker.Handler.Webhook (handleMessage)
 import Slacklinker.Models
-import Slacklinker.PersistImport qualified as UUID
 import Slacklinker.SplitUrl (SlackUrlParts (..), splitSlackUrl)
 import TestApp
 import TestImport
@@ -54,41 +53,9 @@ messageEventWithBlocks blocks =
 updateThreadTs :: MessageEvent -> Maybe Text -> MessageEvent
 updateThreadTs MessageEvent {..} newThreadTs = MessageEvent {threadTs = newThreadTs, ..}
 
-rtkey :: Key RepliedThread
-rtkey = RepliedThreadKey {unRepliedThreadKey = fromJust $ UUID.fromText "5b81af0c-66df-11ed-9a71-f3d2e5711556"}
-
-wsuuid :: Key Workspace
-wsuuid = WorkspaceKey {unWorkspaceKey = fromJust $ UUID.fromText "5b81af0c-66df-11ed-9a71-f3d2e5711556"}
-
-jckey = JoinedChannelKey $ fromJust $ UUID.fromText "5b81af0c-66df-11ed-9a71-f3d2e5711556"
-lmKey = LinkedMessageKey $ fromJust $ UUID.fromText "5b81af0c-66df-11ed-9a71-f3d2e5711556"
-
-lm =
-  LinkedMessage
-    { repliedThreadId = rtkey
-    , joinedChannelId = jckey
-    , messageTs = "1663978925.099999"
-    , threadTs = Nothing
-    , sent = False
-    }
-
 spec :: Spec
 spec = describe "Webhooks" do
   withApp $ describe "Should insert RepliedThread for a message" do
-    fit "wtf" \app -> do
-      runAppM app $ do
-        let (url, parts) = sampleUrl
-        let msg = messageEventWithBlocks [SlackBlockRichText . urlRichText $ url]
-
-        -- FIXME: MonadFail instead of irrefutable pattern crimes
-        ~(Just (Entity rtId _thread)) <- pure . Just $ Entity rtkey $ RepliedThread wsuuid Nothing (ConversationId "a") "a"
-
-        ~[Entity _ theLink] <- pure [Entity lmKey lm]
-        ~(Just (Entity channelId _)) <- seq wsuuid (seq msg.channel (pure $ Nothing @(Entity JoinedChannel)))
-        print channelId
-        print theLink
-        pure ()
-
     it "simple link" \app -> do
       runAppM app $ do
         (wsId, teamId) <- createWorkspace

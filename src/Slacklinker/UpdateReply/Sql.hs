@@ -6,7 +6,6 @@ module Slacklinker.UpdateReply.Sql (
 import Database.Esqueleto.Experimental
 import Slacklinker.Import
 import Slacklinker.Models
-import Slacklinker.PersistImport ()
 
 linkedMessagesInThread ::
   RepliedThreadId ->
