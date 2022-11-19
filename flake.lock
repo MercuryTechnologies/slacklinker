@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "apply-refact": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1666418383,
+        "narHash": "sha256-a/qTzS1dgDfjT1vnOkaMHegKtBo6F1j3q62HY8g0V/Y=",
+        "owner": "july541",
+        "repo": "apply-refact",
+        "rev": "1943b3848e10f9824806c4a3a286fcaec22b4bb8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "july541",
+        "ref": "ghc-9.4",
+        "repo": "apply-refact",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -31,29 +48,13 @@
         "type": "github"
       }
     },
-    "mono-traversable": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1652787287,
-        "narHash": "sha256-XgDtoSc+QRsRqJA+hPGQ3VfttLWGtA4vwvXnUUNH6NA=",
-        "owner": "snoyberg",
-        "repo": "mono-traversable",
-        "rev": "28bb773905bf9cd17e42f85eda4e872a27717579",
-        "type": "github"
-      },
-      "original": {
-        "owner": "snoyberg",
-        "repo": "mono-traversable",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1667482890,
-        "narHash": "sha256-pua0jp87iwN7NBY5/ypx0s9L9CG49Ju/NI4wGwurHc4=",
+        "lastModified": 1668765800,
+        "narHash": "sha256-rC40+/W6Hio7b/RsY8SvQPKNx4WqNcTgfYv8cUMAvJk=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "a2a777538d971c6b01c6e54af89ddd6567c055e8",
+        "rev": "52b2ac8ae18bbad4374ff0dd5aeee0fdf1aea739",
         "type": "github"
       },
       "original": {
@@ -65,9 +66,9 @@
     },
     "root": {
       "inputs": {
+        "apply-refact": "apply-refact",
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
-        "mono-traversable": "mono-traversable",
         "nixpkgs": "nixpkgs",
         "slack-web": "slack-web"
       }
