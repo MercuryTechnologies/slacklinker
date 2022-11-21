@@ -239,7 +239,7 @@ draftMessage workspace links =
     makeMessage :: [Text] -> Text
     makeMessage linksToInclude =
       let linksList = unlines $ map ("* " <>) linksToInclude
-       in "This thread was linked elsewhere:\n" <> linksList
+       in "This thread was linked elsewhere (mouse over for preview):\n" <> linksList
 
 doUpdateReply :: (HasApp m, MonadIO m) => RepliedThreadId -> m ()
 doUpdateReply r = do
