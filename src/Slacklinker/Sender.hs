@@ -9,6 +9,7 @@ module Slacklinker.Sender (
   senderThread,
 ) where
 
+import Data.Text (splitOn)
 import Data.Vector qualified as V
 import Database.Esqueleto.Experimental qualified as E
 import Database.Persist
@@ -217,8 +218,16 @@ draftMessage workspace links =
     makeUrl mChannelName slackSubdomain urlParts = do
       url <- buildSlackUrl slackSubdomain urlParts
       pure $ case mChannelName of
-        Just channelName -> concat ["<", url, "|In #", channelName, ">"]
+        Just channelName -> concat ["<", url, "|In #", channelName, ">, ", mkDate urlParts.messageTs]
         Nothing -> url
+
+    -- https://api.slack.com/reference/surfaces/formatting#date-formatting
+    mkDate ts =
+      let -- Slack doesn't like decimals in dates
+          extractFirst (x : _) = x
+          extractFirst _ = ""
+          ts' = extractFirst $ splitOn "." ts
+       in concat ["<!date^", ts', "^{date_short_pretty} at {time}|datetime>"]
 
     toLink :: (LinkedMessage, JoinedChannel) -> Maybe Text
     toLink (LinkedMessage {messageTs, threadTs}, joinedChannel) =

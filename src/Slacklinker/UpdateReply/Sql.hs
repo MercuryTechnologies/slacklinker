@@ -17,6 +17,7 @@ linkedMessagesInThread repliedThreadId = do
         `innerJoin` table @JoinedChannel
       `on` (\(lm :& jc) -> lm.joinedChannelId ==. jc.id)
   where_ $ lm.repliedThreadId ==. val repliedThreadId
+  orderBy [desc lm.messageTs]
   pure (lm, jc)
 
 workspaceByRepliedThreadId :: RepliedThreadId -> SqlQuery (SqlExpr (Entity Workspace))
