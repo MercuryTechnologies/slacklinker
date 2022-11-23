@@ -261,7 +261,9 @@ doUpdateReply r = do
       (repliedThread.conversationId, repliedThread.threadTs, repliedThread.replyTs)
       message
 
-  runDB $ update r [RepliedThreadReplyTs =. Just ts]
+  runDB $ do
+    update r [RepliedThreadReplyTs =. Just ts]
+    updateWhere [LinkedMessageId <-. (entityKey . fst <$> links)] [LinkedMessageSent =. True]
   where
     sendOrReplaceSlackMessage token (conversationId, _threadTs, Just ts) content =
       updateRspTs <$> runSlack token \slackConfig ->
