@@ -147,6 +147,20 @@ doUpdateJoined wsInfo cid = do
   where
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
+    doUpdateJoined' :: (HasApp m, MonadIO m) => m ()
+    doUpdateJoined' = do
+      members <- fetchMemberConversations wsInfo
+      -- N+1 query, but the alternative is not type safe.
+      runDB $ forM_ (V.mapMaybe channelsOnly members) $ \chan -> do
+        void $
+          upsertBy
+            (UniqueJoinedChannel wsInfo.workspaceId chan.channelId)
+            JoinedChannel {workspaceId = wsInfo.workspaceId, channelId = chan.channelId, name = Just chan.channelName}
+            [JoinedChannelName =. Just chan.channelName]
+      where
+        channelsOnly (Channel c) = Just c
+        channelsOnly _ = Nothing
+
 fetchAllConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
 fetchAllConversations wsInfo = do
   slackConfig <- appSlackConfig wsInfo.token
