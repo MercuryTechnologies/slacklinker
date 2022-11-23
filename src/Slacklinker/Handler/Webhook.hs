@@ -7,8 +7,9 @@
    endpoint handler. After this, we know that the messages were sent by Slack
    and can be trusted.
 -}
-module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR) where
+module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage) where
 
+import Control.Monad.Extra (mapMaybeM)
 import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Database.Persist
@@ -41,29 +42,74 @@ extractLinks block =
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
     fromRichItem _ = []
 
-makeMessage :: Entity Workspace -> MessageEvent -> SlackUrlParts -> Maybe SendMessageReq
-makeMessage wsE@(Entity _ ws) msgEv SlackUrlParts {..} = do
-  guard $ not linkedMessageIsInSameThread
-  messageContent <- mMessageContent
-  pure
-    SendMessageReq
-      { replyToTs = Just messageTs
-      , channel = channelId
-      , messageContent
-      , workspaceMeta = workspaceMetaFromWorkspaceE wsE
-      }
-  where
-    -- If you link a message in the same thread as it is in, it doesn't make
-    -- any sense to reply to that thread since it will just add noise.
-    linkedMessageIsInSameThread = Just messageTs == msgEv.threadTs
+data MessageDestination = MessageDestination
+  { replyToTs :: Maybe Text
+  , channel :: ConversationId
+  , workspaceMeta :: WorkspaceMeta
+  }
+  deriving stock (Show)
 
-    referencerSUP =
-      SlackUrlParts
-        { channelId = msgEv.channel
-        , messageTs = msgEv.ts
-        , threadTs = msgEv.threadTs
-        }
-    mMessageContent = ("This message was referenced elsewhere: " <>) <$> buildSlackUrl ws.slackSubdomain referencerSUP
+-- | Records that a message has been linked to
+recordLink ::
+  (HasApp m, MonadIO m) =>
+  WorkspaceId ->
+  SlackUrlParts ->
+  SlackUrlParts ->
+  m (Maybe RepliedThreadId)
+recordLink workspaceId linkSource linkDestination = do
+  if isInSameThread linkSource linkDestination
+    then pure Nothing
+    else do
+      runDB $ do
+        repliedThreadId_ <-
+          insertBy
+            RepliedThread
+              { workspaceId
+              , replyTs = Nothing
+              , -- Destination of the link
+                conversationId = linkDestination.channelId
+              , -- If a link is to a message in a thread, the message we're
+                -- going to reply to is the thread parent. If it's a standalone
+                -- message, it's the message itself. This deduplicates our
+                -- replies between messages within the same thread.
+                threadTs =
+                  fromMaybe
+                    linkDestination.messageTs
+                    linkDestination.threadTs
+              }
+        let repliedThreadId = either entityKey identity repliedThreadId_
+
+        joinedChannelId_ <-
+          insertBy
+            JoinedChannel {workspaceId, name = Nothing, channelId = linkSource.channelId}
+        let joinedChannelId = either entityKey identity joinedChannelId_
+
+        -- We ignore unique violations here on purpose: if it's already been noted,
+        -- we don't care.
+        void $
+          insertBy
+            LinkedMessage
+              { repliedThreadId
+              , -- The message event is the source of the link
+                joinedChannelId
+              , messageTs = linkSource.messageTs
+              , threadTs = linkSource.threadTs
+              , sent = False
+              }
+        pure $ Just repliedThreadId
+  where
+    isJustAndEqual a b = fromMaybe False (liftM2 (==) a b)
+    isInSameThread link1 link2 =
+      link1.channelId == link2.channelId
+        && (
+             -- link2 is the thread parent of link1
+             link1.threadTs == Just link2.messageTs
+              ||
+              -- link1 is the thread parent of link2
+              link2.threadTs == Just link1.messageTs
+              -- both are children of the same thread
+              || (link1.threadTs `isJustAndEqual` link2.threadTs)
+           )
 
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
@@ -74,16 +120,25 @@ handleMessage ev teamId = do
   case ev.channelType of
     Channel -> do
       let links = mconcat $ extractLinks <$> ev.blocks
-          todos = mapMaybe (\url -> makeMessage workspace ev =<< splitSlackUrl url) links
+      repliedThreadIds <- mapMaybeM (handleUrl $ entityKey workspace) links
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
-      forM_ todos $ \todo -> do
-        senderEnqueue $ SendMessage todo
+      forM_ repliedThreadIds $ \todo -> do
+        for_ todo $ senderEnqueue . UpdateReply
     Im -> do
       handleImCommand (workspaceMetaFromWorkspaceE workspace) ev.channel ev.text
     Group ->
       -- we don't do these
       pure ()
+  where
+    handleUrl workspaceId url = do
+      let linkSource =
+            SlackUrlParts
+              { channelId = ev.channel
+              , messageTs = ev.ts
+              , threadTs = ev.threadTs
+              }
+      for (splitSlackUrl url) $ recordLink workspaceId linkSource
 
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do

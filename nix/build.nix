@@ -1,4 +1,4 @@
-{ prev, final, hfinal, hprev, werror }: slacklinker:
+{ prev, final, hfinal, hprev, werror, testToolDepends ? [] }: slacklinker:
 let
   hlib = prev.haskell.lib;
   lib = prev.lib;
@@ -22,6 +22,8 @@ in
   (drv: {
     configureFlags = (drv.configureFlags or [ ])
       ++ lib.optionals werror [ "--ghc-option=-Werror" ];
+
+    testToolDepends = (drv.testToolDepends or [ ]) ++ testToolDepends;
 
     # chmod: hack since the extraFiles are in the nix store and cp preserves
     # permissions (desirable except for the lack of write bit)

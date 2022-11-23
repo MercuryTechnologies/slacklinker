@@ -36,6 +36,7 @@ dependencies:
   - pcre-heavy
   - persistent
   - persistent-postgresql
+  - postgres-options
   - pretty-simple
   - resource-pool
   - safe
@@ -50,8 +51,10 @@ dependencies:
   - text
   - th-abstraction
   - time
+  - transformers
   - typed-process
   - unliftio
+  - unordered-containers
   - uri-bytestring
   - uuid
   - vector
@@ -85,12 +88,14 @@ tests:
       - -O0
 
     dependencies:
+      - HUnit
+      - hs-opentelemetry-instrumentation-hspec
       - hspec
       - hspec-core
       - hspec-expectations
       - hspec-golden >= 0.2
-      - HUnit
       - slacklinker
+      - tmp-postgres
 
   test-dev:
     main: Main.hs
@@ -104,11 +109,13 @@ tests:
       - test
       - src
     dependencies:
+      - HUnit
+      - hs-opentelemetry-instrumentation-hspec
       - hspec
       - hspec-core
       - hspec-expectations
       - hspec-golden >= 0.2
-      - HUnit
+      - tmp-postgres
     when:
       - condition: flag(local-dev)
         then:
@@ -141,7 +148,6 @@ ghc-options:
 
 default-extensions:
   - AllowAmbiguousTypes
-  - ApplicativeDo
   - BlockArguments
   - DataKinds
   - DeriveAnyClass

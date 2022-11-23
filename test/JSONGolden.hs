@@ -17,7 +17,7 @@ typeName = pack . tyConName . typeRepTyCon $ typeRep @a
 
 goldenTest :: forall a. (FromJSON a, Show a, Typeable a) => Text -> LByteString -> Golden Text
 goldenTest name rawInput = do
-  let output = either error id $ eitherDecode @a rawInput
+  let output = either error identity $ eitherDecode @a rawInput
       theTypeName = typeName @a
    in Golden
         { output = toStrict . pShowNoColor $ output

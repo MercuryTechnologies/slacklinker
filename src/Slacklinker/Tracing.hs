@@ -1,6 +1,9 @@
-{-# LANGUAGE QuasiQuotes #-}
-
-module Slacklinker.Tracing (inSpan, inSpan', OTel.defaultSpanArguments) where
+module Slacklinker.Tracing (
+  inSpan,
+  inSpan',
+  OTel.defaultSpanArguments,
+  withGlobalTracing,
+) where
 
 import OpenTelemetry.Trace qualified as OTel
 import Slacklinker.Prelude hiding (traceId)
@@ -19,3 +22,10 @@ inSpan' :: MonadUnliftIO m => Text -> OTel.SpanArguments -> (OTel.Span -> m b) -
 inSpan' name args act = do
   tracer <- getTracer
   OTel.inSpan' tracer name args act
+
+withGlobalTracing :: MonadUnliftIO m => m () -> m ()
+withGlobalTracing act =
+  bracket
+    (liftIO OTel.initializeGlobalTracerProvider)
+    (liftIO . OTel.shutdownTracerProvider)
+    (const act)
