@@ -9,16 +9,21 @@ import Slacklinker.Models
 
 linkedMessagesInThread ::
   RepliedThreadId ->
-  SqlQuery (SqlExpr (Entity LinkedMessage), SqlExpr (Entity JoinedChannel))
+  SqlQuery
+    ( SqlExpr (Entity LinkedMessage)
+    , SqlExpr (Maybe (Entity User))
+    , SqlExpr (Entity JoinedChannel)
+    )
 linkedMessagesInThread repliedThreadId = do
-  (lm :& jc) <-
-    from
-      $ table @LinkedMessage
-        `innerJoin` table @JoinedChannel
-      `on` (\(lm :& jc) -> lm.joinedChannelId ==. jc.id)
+  (lm :& mU :& jc) <- from do
+    table @LinkedMessage
+      `leftJoin` table @User
+        `on` (\(lm :& u) -> lm.userId ==. u.id)
+      `innerJoin` table @JoinedChannel
+        `on` (\(lm :& _ :& jc) -> lm.joinedChannelId ==. jc.id)
   where_ $ lm.repliedThreadId ==. val repliedThreadId
   orderBy [desc lm.messageTs]
-  pure (lm, jc)
+  pure (lm, mU, jc)
 
 workspaceByRepliedThreadId :: RepliedThreadId -> SqlQuery (SqlExpr (Entity Workspace))
 workspaceByRepliedThreadId repliedThreadId = do
