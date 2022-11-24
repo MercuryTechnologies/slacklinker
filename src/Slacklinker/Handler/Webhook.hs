@@ -54,10 +54,11 @@ data MessageDestination = MessageDestination
 recordLink ::
   (HasApp m, MonadIO m) =>
   WorkspaceId ->
+  UserId ->
   SlackUrlParts ->
   SlackUrlParts ->
   m (Maybe RepliedThreadId)
-recordLink workspaceId linkSource linkDestination = do
+recordLink workspaceId userId linkSource linkDestination = do
   if isInSameThread linkSource linkDestination
     then pure Nothing
     else do
@@ -93,6 +94,7 @@ recordLink workspaceId linkSource linkDestination = do
               { repliedThreadId
               , -- The message event is the source of the link
                 joinedChannelId
+              , userId = Just userId
               , messageTs = linkSource.messageTs
               , threadTs = linkSource.threadTs
               , sent = False
@@ -148,8 +150,8 @@ handleMessage ev teamId = do
         -- FIXME(evanr): The only IO these `record*` functions perform
         -- currently is database inserts, so I think they can/should be run in
         -- the same transaction.
-        void $ recordUser workspaceId ev.user
-        recordLink workspaceId linkSource linkDestination
+        userId <- recordUser workspaceId ev.user
+        recordLink workspaceId userId linkSource linkDestination
 
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do

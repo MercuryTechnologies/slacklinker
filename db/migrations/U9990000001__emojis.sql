@@ -16,3 +16,6 @@ alter table "users"
   foreign key ("workspace_id") references "workspaces" ("id")
   on delete restrict
   on update restrict;
+
+alter table "linked_messages"
+  add column "user_id" uuid null;

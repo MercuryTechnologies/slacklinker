@@ -96,6 +96,9 @@ LinkedMessage sql=linked_messages
   -- | Channel that the message was linked from.
   joinedChannelId JoinedChannelId
 
+  -- | User who sent the message.
+  userId UserId Maybe
+
   -- | Slack URL parts: message ts
   messageTs Text
 
