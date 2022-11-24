@@ -27,6 +27,7 @@ import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, validateRequest)
 import Web.Slack.Types (TeamId (..))
+import Web.Slack.Types qualified as Slack (UserId (..))
 
 extractLinks :: SlackBlock -> [Text]
 extractLinks block =
@@ -111,6 +112,11 @@ recordLink workspaceId linkSource linkDestination = do
               || (link1.threadTs `isJustAndEqual` link2.threadTs)
            )
 
+recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m UserId
+recordUser workspaceId slackUserId = do
+  let user = User {workspaceId, slackUserId, emoji = Nothing}
+  runDB (insertBy user) >>= either (pure . entityKey) pure
+
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
 
@@ -138,7 +144,12 @@ handleMessage ev teamId = do
               , messageTs = ev.ts
               , threadTs = ev.threadTs
               }
-      for (splitSlackUrl url) $ recordLink workspaceId linkSource
+      for (splitSlackUrl url) \linkDestination -> do
+        -- FIXME(evanr): The only IO these `record*` functions perform
+        -- currently is database inserts, so I think they can/should be run in
+        -- the same transaction.
+        void $ recordUser workspaceId ev.user
+        recordLink workspaceId linkSource linkDestination
 
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
