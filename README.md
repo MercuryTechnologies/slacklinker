@@ -98,6 +98,9 @@ public instance, you should immediately disable `AllowRegistration`:
 bin/one-off-task set-setting --settingName AllowRegistration --value false
 ```
 
+(note that one-off-task needs to have the same environment variables as the
+service)
+
 Once Slacklinker is authorized, you can send the bot a private message
 `join_all`, which will have the bot join all existing public non-shared Slack
 channels.
@@ -115,8 +118,31 @@ production.
 [Socket Mode]: https://api.slack.com/apis/connections/socket
 [ngrok]: https://ngrok.com/
 
+We recommend using [`direnv`][direnv] and [`nix-direnv`][nix-direnv] to get a
+working environment for working on slacklinker. You can see a sample for
+`.envrc` at [./.envrc.sample](./.envrc.sample).
+
+[nix-direnv]: https://github.com/nix-community/nix-direnv
+[direnv]: https://direnv.net/
+
+### Schema changes & Migrations
+
+If you do a database schema change, you will need to generate a migration.
+These use the [Refinery] CLI, which basically just runs SQL. You can get
+Persistent to generate the outline of the migration like so:
+
+```
+$ cabal run one-off-task -- suggest-migrations --migrationName your_migration_name
+```
+
+[Refinery]: https://github.com/rust-db/refinery
+
+### Golden tests
+
 Use `scripts/update-golden.sh SOME_GOLDEN_DIR` to update golden snapshot test
 files.
+
+### Logging
 
 Set log level with `LOG_LEVEL=debug` and SQL log level with `LOG_SQL=debug`
 environment variables.

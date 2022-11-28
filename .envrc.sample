@@ -1,0 +1,12 @@
+use flake
+
+export OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io
+export OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_HONEYCOMB_APIKEY
+export OTEL_TRACES_SAMPLER=always_on
+export OTEL_SERVICE_NAME=slacklinker
+
+export POSTGRES_CONNECTION_STRING=postgresql://slacklinker@localhost:5432/slacklinker
+
+export SLACK_CLIENT_ID=YOUR_SLACK_CLIENT_ID
+export SLACK_CLIENT_SECRET=YOUR_SLACK_CLIENT_SECRET
+export SLACK_SIGNING_SECRET=YOUR_SLACK_SIGNING_SECRET
