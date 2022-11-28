@@ -22,6 +22,7 @@ import Slacklinker.Import
 import Slacklinker.Persist.DeriveEnum
 import Slacklinker.UUID
 import Web.Slack.Common (ConversationId (..), TeamId (..))
+import Web.Slack.Types (UserId (..))
 
 deriving newtype instance PersistField TeamId
 
@@ -30,6 +31,10 @@ deriving newtype instance PersistFieldSql TeamId
 deriving newtype instance PersistFieldSql ConversationId
 
 deriving newtype instance PersistField ConversationId
+
+deriving newtype instance PersistField UserId
+
+deriving newtype instance PersistFieldSql UserId
 
 -- | Makes a model file with unprefixed field names.
 mkModelUnprefixed :: [EntityDef] -> [UnboundEntityDef] -> Q [Dec]
