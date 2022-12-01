@@ -24,7 +24,7 @@ import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Slack.ConversationsJoin
 import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
-import Slacklinker.Types (SlackToken)
+import Slacklinker.Types (Emoji (..), SlackToken)
 import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
 import System.IO.Unsafe (unsafePerformIO)
 import Web.Slack (SlackConfig, chatPostMessage, chatUpdate, conversationsListAll)
@@ -209,16 +209,21 @@ doJoinAll wsInfo cid = do
 
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
-draftMessage :: Workspace -> [(LinkedMessage, JoinedChannel)] -> Text
+draftMessage :: Workspace -> [(LinkedMessage, Maybe KnownUser, JoinedChannel)] -> Text
 draftMessage workspace links =
   let linksText = mapMaybe toLink links
    in makeMessage linksText
   where
-    makeUrl :: Maybe Text -> Text -> SlackUrlParts -> Maybe Text
-    makeUrl mChannelName slackSubdomain urlParts = do
+    makeUrl :: Maybe KnownUser -> Maybe Text -> Text -> SlackUrlParts -> Maybe Text
+    makeUrl mUser mChannelName slackSubdomain urlParts = do
       url <- buildSlackUrl slackSubdomain urlParts
+      let mEmoji = mUser >>= (.emoji) <&> unEmoji
       pure $ case mChannelName of
-        Just channelName -> concat ["<", url, "|In #", channelName, ">, ", mkDate urlParts.messageTs]
+        Just channelName -> case mEmoji of
+          Just emoji ->
+            concat ["<", url, "|:", emoji, ": in #", channelName, ">, ", mkDate urlParts.messageTs]
+          Nothing ->
+            concat ["<", url, "|In #", channelName, ">, ", mkDate urlParts.messageTs]
         Nothing -> url
 
     -- https://api.slack.com/reference/surfaces/formatting#date-formatting
@@ -229,9 +234,10 @@ draftMessage workspace links =
           ts' = extractFirst $ splitOn "." ts
        in concat ["<!date^", ts', "^{date_short_pretty} at {time}|datetime>"]
 
-    toLink :: (LinkedMessage, JoinedChannel) -> Maybe Text
-    toLink (LinkedMessage {messageTs, threadTs}, joinedChannel) =
+    toLink :: (LinkedMessage, Maybe KnownUser, JoinedChannel) -> Maybe Text
+    toLink (LinkedMessage {messageTs, threadTs}, mUser, joinedChannel) =
       makeUrl
+        mUser
         joinedChannel.name
         workspace.slackSubdomain
         SlackUrlParts {messageTs, channelId = joinedChannel.channelId, threadTs}
@@ -253,7 +259,7 @@ doUpdateReply r = do
         >>= flip orThrow (SlacklinkerBug "workspace does not exist for a replied thread ID")
     pure (repliedThread, workspace, links)
 
-  let message = draftMessage workspace (map (bimap entityVal entityVal) links)
+  let message = draftMessage workspace (map (\(lm, mU, jc) -> (entityVal lm, entityVal <$> mU, entityVal jc)) links)
 
   ts <-
     sendOrReplaceSlackMessage
@@ -263,7 +269,9 @@ doUpdateReply r = do
 
   runDB $ do
     update r [RepliedThreadReplyTs =. Just ts]
-    updateWhere [LinkedMessageId <-. (entityKey . fst <$> links)] [LinkedMessageSent =. True]
+    updateWhere
+      [LinkedMessageId <-. ((\(x, _, _) -> entityKey x) <$> links)]
+      [LinkedMessageSent =. True]
   where
     sendOrReplaceSlackMessage token (conversationId, _threadTs, Just ts) content =
       updateRspTs <$> runSlack token \slackConfig ->

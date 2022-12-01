@@ -27,6 +27,7 @@ import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, validateRequest)
 import Web.Slack.Types (TeamId (..))
+import Web.Slack.Types qualified as Slack (UserId (..))
 
 extractLinks :: SlackBlock -> [Text]
 extractLinks block =
@@ -53,10 +54,11 @@ data MessageDestination = MessageDestination
 recordLink ::
   (HasApp m, MonadIO m) =>
   WorkspaceId ->
+  KnownUserId ->
   SlackUrlParts ->
   SlackUrlParts ->
   m (Maybe RepliedThreadId)
-recordLink workspaceId linkSource linkDestination = do
+recordLink workspaceId userId linkSource linkDestination = do
   if isInSameThread linkSource linkDestination
     then pure Nothing
     else do
@@ -92,6 +94,7 @@ recordLink workspaceId linkSource linkDestination = do
               { repliedThreadId
               , -- The message event is the source of the link
                 joinedChannelId
+              , knownUserId = Just userId
               , messageTs = linkSource.messageTs
               , threadTs = linkSource.threadTs
               , sent = False
@@ -111,6 +114,11 @@ recordLink workspaceId linkSource linkDestination = do
               || (link1.threadTs `isJustAndEqual` link2.threadTs)
            )
 
+recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m KnownUserId
+recordUser workspaceId slackUserId = do
+  let user = KnownUser {workspaceId, slackUserId, emoji = Nothing}
+  runDB (insertBy user) >>= either (pure . entityKey) pure
+
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
 
@@ -119,7 +127,7 @@ handleMessage ev teamId = do
   workspace <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
-      let links = mconcat $ extractLinks <$> ev.blocks
+      let links = mconcat $ extractLinks <$> fromMaybe [] ev.blocks
       repliedThreadIds <- mapMaybeM (handleUrl $ entityKey workspace) links
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
@@ -138,7 +146,12 @@ handleMessage ev teamId = do
               , messageTs = ev.ts
               , threadTs = ev.threadTs
               }
-      for (splitSlackUrl url) $ recordLink workspaceId linkSource
+      for (splitSlackUrl url) \linkDestination -> do
+        -- FIXME(evanr): The only IO these `record*` functions perform
+        -- currently is database inserts, so I think they can/should be run in
+        -- the same transaction.
+        userId <- recordUser workspaceId ev.user
+        recordLink workspaceId userId linkSource linkDestination
 
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do

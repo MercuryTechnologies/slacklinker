@@ -48,7 +48,7 @@ ts2 = "1663972222.222222"
 messageEventWithBlocks :: Text -> [SlackBlock] -> MessageEvent
 messageEventWithBlocks ts blocks =
   MessageEvent
-    { blocks
+    { blocks = Just blocks
     , channel = ConversationId "C043YJGBY49"
     , text = "nobody looks at this"
     , channelType = Channel
@@ -71,7 +71,16 @@ doLink teamId ts url = do
   pure msg
 
 spec :: Spec
-spec = describe "Webhooks" do
+spec = do
+  withApp $ describe "User insertion" do
+    it "inserts a user when a link is sent" \app -> do
+      runAppM app do
+        (wsId, teamId) <- createWorkspace
+        let (url, _parts) = sampleUrl
+        msg <- doLink teamId ts1 url
+        ~(Just (Entity _ userData)) <- runDB . getBy $ UniqueKnownUser wsId msg.user
+        liftIO $ userData.emoji `shouldBe` Nothing
+
   withApp $ describe "Should insert RepliedThread for a message" do
     it "can deal with a simple link" \app -> do
       runAppM app $ do

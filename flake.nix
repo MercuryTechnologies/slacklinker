@@ -5,7 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     slack-web = {
-      url = "github:mercurytechnologies/slack-web/chat-update";
+      url = "github:mercurytechnologies/slack-web";
       flake = false;
     };
     mono-traversable = {
