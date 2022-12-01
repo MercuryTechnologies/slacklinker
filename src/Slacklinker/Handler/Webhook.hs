@@ -54,7 +54,7 @@ data MessageDestination = MessageDestination
 recordLink ::
   (HasApp m, MonadIO m) =>
   WorkspaceId ->
-  UserId ->
+  KnownUserId ->
   SlackUrlParts ->
   SlackUrlParts ->
   m (Maybe RepliedThreadId)
@@ -94,7 +94,7 @@ recordLink workspaceId userId linkSource linkDestination = do
               { repliedThreadId
               , -- The message event is the source of the link
                 joinedChannelId
-              , userId = Just userId
+              , knownUserId = Just userId
               , messageTs = linkSource.messageTs
               , threadTs = linkSource.threadTs
               , sent = False
@@ -114,9 +114,9 @@ recordLink workspaceId userId linkSource linkDestination = do
               || (link1.threadTs `isJustAndEqual` link2.threadTs)
            )
 
-recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m UserId
+recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m KnownUserId
 recordUser workspaceId slackUserId = do
-  let user = User {workspaceId, slackUserId, emoji = Nothing}
+  let user = KnownUser {workspaceId, slackUserId, emoji = Nothing}
   runDB (insertBy user) >>= either (pure . entityKey) pure
 
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)

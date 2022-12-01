@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Slacklinker.Types where
@@ -46,5 +45,5 @@ instance Show SlackToken where
 
 -- | Slack emoji name, without surrounding colons (e.g. @slightly_smiling_face@)
 newtype Emoji = Emoji {unEmoji :: Text}
-  deriving stock (Eq)
+  deriving stock (Eq, Show)
   deriving newtype (FromJSON, PersistField, PersistFieldSql)

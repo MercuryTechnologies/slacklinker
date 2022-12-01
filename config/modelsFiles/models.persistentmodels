@@ -22,14 +22,14 @@ JoinedChannel sql=joined_channels
   updatedAt UTCTime MigrationOnly
   UniqueJoinedChannel workspaceId channelId sql=joined_channels_workspace_channel_key
 
-User sql=users
+KnownUser sql=known_users
   Id UUID default=uuid_generate_v1mc()
   workspaceId WorkspaceId
   slackUserId Slack.UserId
   emoji Emoji Maybe
   createdAt UTCTime MigrationOnly
   updatedAt UTCTime MigrationOnly
-  UniqueUser workspaceId slackUserId sql=users_workspace_slack_user_key
+  UniqueKnownUser workspaceId slackUserId sql=known_users_workspace_slack_user_key
 
 -- | \"state\" parameters we have given to Slack
 Nonce sql=nonces
@@ -97,7 +97,7 @@ LinkedMessage sql=linked_messages
   joinedChannelId JoinedChannelId
 
   -- | User who sent the message.
-  userId UserId Maybe
+  knownUserId KnownUserId Maybe
 
   -- | Slack URL parts: message ts
   messageTs Text

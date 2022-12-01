@@ -209,12 +209,12 @@ doJoinAll wsInfo cid = do
 
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
 
-draftMessage :: Workspace -> [(LinkedMessage, Maybe User, JoinedChannel)] -> Text
+draftMessage :: Workspace -> [(LinkedMessage, Maybe KnownUser, JoinedChannel)] -> Text
 draftMessage workspace links =
   let linksText = mapMaybe toLink links
    in makeMessage linksText
   where
-    makeUrl :: Maybe User -> Maybe Text -> Text -> SlackUrlParts -> Maybe Text
+    makeUrl :: Maybe KnownUser -> Maybe Text -> Text -> SlackUrlParts -> Maybe Text
     makeUrl mUser mChannelName slackSubdomain urlParts = do
       url <- buildSlackUrl slackSubdomain urlParts
       let mEmoji = mUser >>= (.emoji) <&> unEmoji
@@ -234,7 +234,7 @@ draftMessage workspace links =
           ts' = extractFirst $ splitOn "." ts
        in concat ["<!date^", ts', "^{date_short_pretty} at {time}|datetime>"]
 
-    toLink :: (LinkedMessage, Maybe User, JoinedChannel) -> Maybe Text
+    toLink :: (LinkedMessage, Maybe KnownUser, JoinedChannel) -> Maybe Text
     toLink (LinkedMessage {messageTs, threadTs}, mUser, joinedChannel) =
       makeUrl
         mUser

@@ -11,14 +11,14 @@ linkedMessagesInThread ::
   RepliedThreadId ->
   SqlQuery
     ( SqlExpr (Entity LinkedMessage)
-    , SqlExpr (Maybe (Entity User))
+    , SqlExpr (Maybe (Entity KnownUser))
     , SqlExpr (Entity JoinedChannel)
     )
 linkedMessagesInThread repliedThreadId = do
   (lm :& mU :& jc) <- from do
     table @LinkedMessage
-      `leftJoin` table @User
-        `on` (\(lm :& u) -> lm.userId ==. u.id)
+      `leftJoin` table @KnownUser
+        `on` (\(lm :& u) -> lm.knownUserId ==. u.id)
       `innerJoin` table @JoinedChannel
         `on` (\(lm :& _ :& jc) -> lm.joinedChannelId ==. jc.id)
   where_ $ lm.repliedThreadId ==. val repliedThreadId
