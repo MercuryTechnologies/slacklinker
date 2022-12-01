@@ -48,7 +48,7 @@ ts2 = "1663972222.222222"
 messageEventWithBlocks :: Text -> [SlackBlock] -> MessageEvent
 messageEventWithBlocks ts blocks =
   MessageEvent
-    { blocks
+    { blocks = Just blocks
     , channel = ConversationId "C043YJGBY49"
     , text = "nobody looks at this"
     , channelType = Channel

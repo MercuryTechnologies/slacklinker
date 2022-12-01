@@ -15,9 +15,9 @@ ConversationsJoinResponse
             , channelIsExtShared = False
             , channelIsOrgShared = False
             , channelSharedTeamIds = Just
-                ( TeamId
-                    { unTeamId = "T043DB835ML" } :| []
-                )
+                [ TeamId
+                    { unTeamId = "T043DB835ML" }
+                ]
             , channelIsPendingExtShared = False
             , channelIsMember = Just True
             , channelTopic = Topic

@@ -127,7 +127,7 @@ handleMessage ev teamId = do
   workspace <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
-      let links = mconcat $ extractLinks <$> ev.blocks
+      let links = mconcat $ extractLinks <$> fromMaybe [] ev.blocks
       repliedThreadIds <- mapMaybeM (handleUrl $ entityKey workspace) links
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
