@@ -25,7 +25,7 @@ import Slacklinker.SplitUrl
 import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
-import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, validateRequest)
+import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, SlackVerificationFailed (..), validateRequest)
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 
@@ -216,6 +216,13 @@ postSlackInteractiveWebhookR sig ts body = do
   case ePayload of
     Left err -> do
       logDebug $ "webhook err: " <> tshow err
+      case err of
+        -- This variant appears *after* the message has been cryptographically
+        -- verified, so any appearance of this is probably a slack-web FromJSON
+        -- bug.
+        VerificationCannotParse _msg ->
+          withCurrentSpan \s -> addAttribute s "payload" (decodeUtf8 body)
+        _ -> pure ()
       throwIO $ VerificationException err
     Right todo -> do
       logDebug $ "payload: " <> cs body <> "\n\n"

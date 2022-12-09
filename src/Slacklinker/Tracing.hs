@@ -3,8 +3,11 @@ module Slacklinker.Tracing (
   inSpan',
   OTel.defaultSpanArguments,
   withGlobalTracing,
+  withCurrentSpan,
 ) where
 
+import OpenTelemetry.Context qualified as OTel
+import OpenTelemetry.Context.ThreadLocal qualified as Context
 import OpenTelemetry.Trace qualified as OTel
 import Slacklinker.Prelude hiding (traceId)
 
@@ -22,6 +25,11 @@ inSpan' :: MonadUnliftIO m => Text -> OTel.SpanArguments -> (OTel.Span -> m b) -
 inSpan' name args act = do
   tracer <- getTracer
   OTel.inSpan' tracer name args act
+
+withCurrentSpan :: MonadIO m => (OTel.Span -> m ()) -> m ()
+withCurrentSpan act = do
+  ctx <- OTel.lookupSpan <$> Context.getContext
+  for_ ctx act
 
 withGlobalTracing :: MonadUnliftIO m => m () -> m ()
 withGlobalTracing act =
