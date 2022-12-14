@@ -30,6 +30,7 @@ dependencies:
   - http-types
   - monad-logger
   - mono-traversable
+  - network-uri
   - optparse-applicative
   - optparse-generic
   - path-pieces

@@ -1,20 +1,20 @@
-module Slacklinker.App
-  ( AppM (..),
-    HasApp (..),
-    RuntimeInfo (..),
-    App (..),
-    AppConfig (..),
-    appSlackConfig,
-    appStartupNoSender,
-    appShutdownNoSender,
-    runAppM,
-    runDB,
-    getConfiguration,
-    makeApp,
-    makeApp'
-  )
-where
+module Slacklinker.App (
+  AppM (..),
+  HasApp (..),
+  RuntimeInfo (..),
+  App (..),
+  AppConfig (..),
+  appSlackConfig,
+  appStartupNoSender,
+  appShutdownNoSender,
+  runAppM,
+  runDB,
+  getConfiguration,
+  makeApp,
+  makeApp',
+) where
 
+import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Logger (LogLevel (..), MonadLoggerIO, ToLogStr (..), defaultOutput)
 import Control.Monad.Logger.CallStack (MonadLoggerIO (..))
 import Data.ByteString.Char8 qualified as BS
@@ -76,7 +76,7 @@ class (Monad m, MonadLogger m) => HasApp m where
   getsApp f = f <$> getApp
 
 newtype AppM a = AppM {unAppM :: ReaderT App IO a}
-  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO)
+  deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO, MonadThrow)
 
 instance MonadLogger AppM where
   monadLoggerLog loc source level msg = do

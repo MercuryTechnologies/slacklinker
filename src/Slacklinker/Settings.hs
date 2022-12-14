@@ -29,6 +29,7 @@ unmarshalSettingByTag :: SlacklinkerSettingTag -> Value -> Either String Slackli
 unmarshalSettingByTag tag val = case tag of
   AllowRegistration -> SlacklinkerSettingEx <$> unmarshalSetting @'AllowRegistration val
   RequireMutualTLS -> SlacklinkerSettingEx <$> unmarshalSetting @'RequireMutualTLS val
+  AllowUploadUserData -> SlacklinkerSettingEx <$> unmarshalSetting @'AllowUploadUserData val
 
 -- | You don't want this function unless the tag is determined at runtime.
 marshalSettingEx :: SlacklinkerSettingEx -> (SlacklinkerSettingTag, Value)
@@ -36,6 +37,8 @@ marshalSettingEx = \case
   SlacklinkerSettingEx (a@(SettingAllowRegistration _) :: SlacklinkerSetting tag) ->
     (reifyTag @tag, marshalSetting a)
   SlacklinkerSettingEx (a@(SettingRequireMutualTLS _) :: SlacklinkerSetting tag) ->
+    (reifyTag @tag, marshalSetting a)
+  SlacklinkerSettingEx (a@(SettingAllowUploadUserData _) :: SlacklinkerSetting tag) ->
     (reifyTag @tag, marshalSetting a)
 
 {- | This is a funny DataKinds thing to let you decode settings as a GADT,
@@ -67,6 +70,13 @@ instance MarshalledSetting 'RequireMutualTLS where
   unmarshalSetting = parseEither $
     withBool "RequireMutualTLS" \b -> pure $ SettingRequireMutualTLS b
 
+instance MarshalledSetting 'AllowUploadUserData where
+  reifyTag = AllowUploadUserData
+
+  marshalSetting (SettingAllowUploadUserData b) = toJSON b
+  unmarshalSetting = parseEither $
+    withBool "AllowUploadUserData" \b -> pure $ SettingAllowUploadUserData b
+
 setSetting :: MonadIO m => SlacklinkerSettingEx -> SqlPersistT m ()
 setSetting setting = do
   let (tag, content) = marshalSettingEx setting
@@ -79,6 +89,7 @@ setSetting setting = do
 settingDefaultByTag :: SlacklinkerSettingTag -> Value
 settingDefaultByTag AllowRegistration = toJSON True
 settingDefaultByTag RequireMutualTLS = toJSON False
+settingDefaultByTag AllowUploadUserData = toJSON False
 
 -- | Example usage (the tilde is an irrefutable pattern, which is unambiguous
 -- due to the GADT):

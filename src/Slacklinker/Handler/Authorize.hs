@@ -33,6 +33,12 @@ desiredScopes =
       "im:history"
     , -- know which IMs it's in (?!)
       "im:read"
+    , -- read files sent in DMs for updating user emoji
+      "files:read"
+    , -- find users by email
+      "users:read"
+    , -- find users by email
+      "users:read.email"
     ]
 
 slackRedirectUriRef :: ByteString -> ByteString -> URIRef Absolute

@@ -18,86 +18,22 @@ import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import OpenTelemetry.Trace (addAttribute)
 import OpenTelemetry.Trace.Core qualified as OTel
-import Slacklinker.App (AppM, HasApp, appSlackConfig, runDB)
+import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Slack.ConversationsJoin
 import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
-import Slacklinker.Types (Emoji (..), SlackToken)
+import Slacklinker.Types (Emoji (..))
 import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
-import System.IO.Unsafe (unsafePerformIO)
-import Web.Slack (SlackConfig, chatPostMessage, chatUpdate, conversationsListAll)
+import Web.Slack (chatPostMessage, chatUpdate, conversationsListAll)
 import Web.Slack.Chat (PostMsgReq (..), PostMsgRsp (..), UpdateReq (..), UpdateRsp (..), mkPostMsgReq, mkUpdateReq)
-import Web.Slack.Common (SlackClientError)
 import Web.Slack.Conversation
 import Web.Slack.Pager (loadingPage)
 import Web.Slack.UsersConversations (usersConversationsAll)
-
-data WorkspaceMeta = WorkspaceMeta
-  { token :: SlackToken
-  , workspaceId :: WorkspaceId
-  , slackTeamId :: TeamId
-  }
-  deriving stock (Show)
-
-workspaceMetaFromWorkspaceE :: Entity Workspace -> WorkspaceMeta
-workspaceMetaFromWorkspaceE (Entity wsId ws) =
-  WorkspaceMeta
-    { slackTeamId = ws.slackTeamId
-    , workspaceId = wsId
-    , token = ws.slackOauthToken
-    }
-
-data SendMessageReq = SendMessageReq
-  { replyToTs :: Maybe Text
-  , channel :: ConversationId
-  , messageContent :: Text
-  , workspaceMeta :: WorkspaceMeta
-  }
-  deriving stock (Show)
-
-data SenderEnvelope = SenderEnvelope
-  { otelContext :: OTel.Context
-  , request :: SenderRequest
-  }
-
-mkSenderEnvelope :: MonadIO m => SenderRequest -> m SenderEnvelope
-mkSenderEnvelope request = do
-  otelContext <- OTel.getContext
-  pure SenderEnvelope {otelContext, request}
-
-data SenderRequest
-  = SendMessage SendMessageReq
-  | JoinChannel WorkspaceMeta ConversationId
-  | -- | Join all public non-archived channels in the workspace. The provided
-    -- ConversationId is for feedback to the user.
-    ReqJoinAll WorkspaceMeta ConversationId
-  | -- | Update joined channel metadata. Required to make link previews include
-    -- channels. This is a one-off fixup: when Slacklinker joins new channels
-    -- with join_all, it will gather this metadata.
-    --
-    -- FIXME(jadel): If you manually join slacklinker to a channel, the metadata
-    -- will probably also be outdated? Maybe we need to subscribe to
-    -- <https://api.slack.com/events/member_joined_channel> and add a new
-    -- scheduled task?
-    ReqUpdateJoined WorkspaceMeta ConversationId
-  | UpdateReply RepliedThreadId
-  | RequestTerminate
-  deriving stock (Show, Generic)
-
-data Terminate = Terminate deriving stock (Show)
-
-instance Exception Terminate
-
-senderEnqueue :: MonadIO m => SenderRequest -> m ()
-senderEnqueue req = do
-  message <- mkSenderEnvelope req
-  atomically $ writeTChan senderChan message
-
-{-# NOINLINE senderChan #-}
-senderChan :: TChan SenderEnvelope
-senderChan = unsafePerformIO newTChanIO
+import Slacklinker.Sender.UserDataUpload
+import Slacklinker.Sender.Types
+import Slacklinker.Sender.Internal
 
 senderHandler :: (MonadIO m) => Text -> SomeException -> m ()
 senderHandler loc e = do
@@ -112,17 +48,6 @@ senderHandler loc e = do
       for_ mspan $ \span -> OTel.recordException span [] Nothing e
       -- unexpected exception, log it
       putStrLn $ loc <> ": SENDER EXC: " <> pack (displayException e)
-
-runSlack :: (MonadIO m, HasApp m) => SlackToken -> (SlackConfig -> IO (Either SlackClientError a)) -> m a
-runSlack workspaceToken act = do
-  slackConfig <- appSlackConfig workspaceToken
-  fromEitherIO . liftIO $ act slackConfig
-
-doSendMessage :: (HasApp m, MonadIO m) => SendMessageReq -> m ()
-doSendMessage req = do
-  let postMsgReq = (mkPostMsgReq req.channel.unConversationId req.messageContent) {postMsgReqThreadTs = req.replyToTs}
-  _ <- runSlack req.workspaceMeta.token $ \slackConfig -> chatPostMessage slackConfig postMsgReq
-  pure ()
 
 doJoinChannel :: (MonadIO m, HasApp m) => WorkspaceMeta -> ConversationId -> m ()
 doJoinChannel ws cid = do
@@ -310,6 +235,8 @@ handleTodo r =
           doUpdateJoined wsInfo cid
         UpdateReply replyId -> do
           doUpdateReply replyId
+        ReqUploadUserData wsInfo cid files -> do
+          doUploadUserData wsInfo cid files
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId

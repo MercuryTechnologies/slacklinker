@@ -46,4 +46,4 @@ instance Show SlackToken where
 -- | Slack emoji name, without surrounding colons (e.g. @slightly_smiling_face@)
 newtype Emoji = Emoji {unEmoji :: Text}
   deriving stock (Eq, Show)
-  deriving newtype (FromJSON, PersistField, PersistFieldSql)
+  deriving newtype (ToJSON, FromJSON, PersistField, PersistFieldSql)
