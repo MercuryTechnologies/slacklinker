@@ -116,7 +116,7 @@ recordLink workspaceId userId linkSource linkDestination = do
 
 recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m KnownUserId
 recordUser workspaceId slackUserId = do
-  let user = KnownUser {workspaceId, slackUserId, emoji = Nothing}
+  let user = KnownUser {workspaceId, slackUserId, emoji = Nothing, email = Nothing, githubUsername = Nothing}
   runDB (insertBy user) >>= either (pure . entityKey) pure
 
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
@@ -134,7 +134,7 @@ handleMessage ev teamId = do
       forM_ repliedThreadIds $ \todo -> do
         for_ todo $ senderEnqueue . UpdateReply
     Im -> do
-      handleImCommand (workspaceMetaFromWorkspaceE workspace) ev.channel ev.text
+      handleImCommand (workspaceMetaFromWorkspaceE workspace) ev.channel ev.text ev.files
     Group ->
       -- we don't do these
       pure ()

@@ -10,8 +10,10 @@ data SlacklinkerSetting (a :: SlacklinkerSettingTag) where
   SettingAllowRegistration :: Bool -> SlacklinkerSetting 'AllowRegistration
   -- | Not implemented yet!
   SettingRequireMutualTLS :: Bool -> SlacklinkerSetting 'RequireMutualTLS
+  -- | Whether to allow uploading user data such as user emoji.
+  SettingAllowUploadUserData :: Bool -> SlacklinkerSetting 'AllowUploadUserData
 
-data SlacklinkerSettingTag = AllowRegistration | RequireMutualTLS
+data SlacklinkerSettingTag = AllowRegistration | RequireMutualTLS | AllowUploadUserData
   deriving stock (Show, Eq, Ord, Enum, Bounded, Generic, Read)
 
 $(derivePostgresEnumForSumType ''SlacklinkerSettingTag "slacklinker_setting_tag")

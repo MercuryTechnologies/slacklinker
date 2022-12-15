@@ -5,11 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     slack-web = {
-      url = "github:mercurytechnologies/slack-web";
-      flake = false;
-    };
-    mono-traversable = {
-      url = "github:snoyberg/mono-traversable";
+      url = "github:mercurytechnologies/slack-web/jadel/users-list-pagination";
       flake = false;
     };
     flake-compat = {
@@ -20,7 +16,7 @@
 
   nixConfig.allow-import-from-derivation = true; # cabal2nix uses IFD
 
-  outputs = { self, nixpkgs, flake-utils, slack-web, mono-traversable, ... }:
+  outputs = { self, nixpkgs, flake-utils, slack-web, ... }:
     let
       ghcVer = "ghc924";
       makeHaskellOverlay = overlay: final: prev: {
@@ -105,6 +101,8 @@
 
             # someone (me) put too tight lower bounds lol
             hs-opentelemetry-instrumentation-hspec = hlib.doJailbreak hprev.hs-opentelemetry-instrumentation-hspec;
+            # buggy output in 4.0.0.0 breaks tests in slack-web
+            pretty-simple = hfinal.pretty-simple_4_1_2_0;
 
             # possible macOS lack-of-sandbox related breakage
             http2 = if prev.stdenv.isDarwin then hlib.dontCheck hprev.http2 else hprev.http2;

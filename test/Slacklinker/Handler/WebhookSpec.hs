@@ -54,6 +54,7 @@ messageEventWithBlocks ts blocks =
     , channelType = Channel
     , user = UserId "U043H11ES4V"
     , ts
+    , files = Nothing
     , threadTs = Nothing
     , appId = Nothing
     , botId = Nothing
