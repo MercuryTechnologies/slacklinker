@@ -45,8 +45,6 @@ updateSlackUsersList wsInfo = do
             , githubUsername = Nothing
             }
           [KnownUserEmail =. email]
-
-  pure ()
   where
     convertPage resp =
       fromList @(Vector _) <$> fromEither resp
@@ -56,7 +54,7 @@ updateUserData wsId UserDataUpload {items} = do
   for_ items \item -> do
     updateWhere
       [KnownUserWorkspaceId ==. wsId, KnownUserEmail ==. Just item.email]
-      [KnownUserEmoji =. item.callsign, KnownUserGithubUsername =. item.gitHubUsername]
+      [KnownUserEmoji =. item.emoji, KnownUserGithubUsername =. item.gitHubUsername]
 
 doUploadUserData :: (MonadThrow m, HasApp m, MonadUnliftIO m) => WorkspaceMeta -> ConversationId -> FileObject -> m ()
 doUploadUserData wsInfo cid file = do
@@ -82,8 +80,6 @@ doUploadUserData wsInfo cid file = do
         Right content -> do
           runDB $ updateUserData wsInfo.workspaceId content
           logMessage "Done!"
-
-      pure ()
     _ -> logMessage "Invalid file upload, please use a snippet!"
   where
     logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
