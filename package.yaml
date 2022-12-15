@@ -70,10 +70,18 @@ executables:
     main: app/Main.hs
     dependencies:
       - slacklinker
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
   one-off-task:
     main: task/Main.hs
     dependencies:
       - slacklinker
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
 
 # Test suite
 tests:

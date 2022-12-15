@@ -34,7 +34,10 @@ oauth_config:
       - channels:join
       - channels:read
       - chat:write
+      - files:read
       - im:history
+      - users:read
+      - users:read.email
 settings:
   event_subscriptions:
     request_url: https://YOUR_SERVICE/webhook
