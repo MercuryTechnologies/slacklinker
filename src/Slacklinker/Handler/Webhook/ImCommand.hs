@@ -1,6 +1,7 @@
 module Slacklinker.Handler.Webhook.ImCommand where
 
 import Data.Text qualified as T
+import OpenTelemetry.Trace (addAttribute)
 import Slacklinker.Import
 import Slacklinker.Sender
 import Web.Slack.Conversation (ConversationId)
@@ -31,7 +32,7 @@ helpMessage =
     ]
 
 handleImCommand ::
-  MonadIO m =>
+  MonadUnliftIO m =>
   WorkspaceMeta ->
   ConversationId ->
   Text ->
@@ -39,21 +40,25 @@ handleImCommand ::
   m ()
 handleImCommand workspaceMeta conversationId message mfiles = do
   let cmd = parseImCommand message
-  case cmd of
-    Help ->
+  inSpan' "handleImCommand" defaultSpanArguments \span -> do
+    addAttribute span "slacklinker.command" $ tshow cmd
+    case cmd of
+      Help -> send helpMessage
+      JoinAll -> senderEnqueue $ ReqJoinAll workspaceMeta conversationId
+      UpdateJoined ->
+        senderEnqueue $
+          ReqUpdateJoined workspaceMeta conversationId
+      UploadUserData -> do
+        let file = headMay =<< mfiles
+        case file of
+          Nothing -> send "No files attached to this message. Send a Slack snippet of JSON to update user data."
+          Just f -> senderEnqueue $ ReqUploadUserData workspaceMeta conversationId f
+  where
+    send messageContent =
       senderEnqueue . SendMessage $
         SendMessageReq
           { replyToTs = Nothing
+          , messageContent
           , channel = conversationId
-          , messageContent = helpMessage
           , workspaceMeta
           }
-    JoinAll -> senderEnqueue $ ReqJoinAll workspaceMeta conversationId
-    UpdateJoined ->
-      senderEnqueue $
-        ReqUpdateJoined workspaceMeta conversationId
-    UploadUserData ->
-      for_ (headMay =<< mfiles) $ \f ->
-        senderEnqueue $ ReqUploadUserData workspaceMeta conversationId f
-
-  pure ()
