@@ -122,7 +122,7 @@ recordUser workspaceId slackUserId = do
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
 
-handleMessage :: (HasApp m, MonadIO m) => MessageEvent -> TeamId -> m ()
+handleMessage :: (HasApp m, MonadUnliftIO m) => MessageEvent -> TeamId -> m ()
 handleMessage ev teamId = do
   workspace <- workspaceByTeamId teamId
   case ev.channelType of
