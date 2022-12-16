@@ -65,7 +65,7 @@ messageEventWithBlocks ts blocks =
 updateThreadTs :: MessageEvent -> Maybe Text -> MessageEvent
 updateThreadTs MessageEvent {..} newThreadTs = MessageEvent {threadTs = newThreadTs, ..}
 
-doLink :: (HasApp m, MonadIO m) => TeamId -> Text -> Text -> m MessageEvent
+doLink :: (HasApp m, MonadUnliftIO m) => TeamId -> Text -> Text -> m MessageEvent
 doLink teamId ts url = do
   let msg = messageEventWithBlocks ts [SlackBlockRichText . urlRichText $ url]
   handleMessage msg teamId
