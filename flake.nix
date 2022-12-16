@@ -4,10 +4,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    slack-web = {
-      url = "github:mercurytechnologies/slack-web/jadel/users-list-pagination";
-      flake = false;
-    };
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
@@ -16,7 +12,7 @@
 
   nixConfig.allow-import-from-derivation = true; # cabal2nix uses IFD
 
-  outputs = { self, nixpkgs, flake-utils, slack-web, ... }:
+  outputs = { self, nixpkgs, flake-utils, ... }:
     let
       ghcVer = "ghc924";
       makeHaskellOverlay = overlay: final: prev: {
@@ -97,7 +93,13 @@
           in
           {
             slacklinker = build slacklinker;
-            slack-web = hprev.callCabal2nix "slack-web" slack-web { };
+            slack-web = hprev.callHackageDirect
+              {
+                pkg = "slack-web";
+                ver = "1.6.1.0";
+                sha256 = "sha256-qM7doDWZywcNIdr8gHX8mj75cdEdMjFc4LNdDX+pNeM=";
+              }
+              { };
 
             # someone (me) put too tight lower bounds lol
             hs-opentelemetry-instrumentation-hspec = hlib.doJailbreak hprev.hs-opentelemetry-instrumentation-hspec;

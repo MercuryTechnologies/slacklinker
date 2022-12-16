@@ -51,25 +51,7 @@
       "inputs": {
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs",
-        "slack-web": "slack-web"
-      }
-    },
-    "slack-web": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1671047347,
-        "narHash": "sha256-s/p/5AeUC7BKzCI+ytCvKCMM65O8TQZRIVKRAX9WzYU=",
-        "owner": "mercurytechnologies",
-        "repo": "slack-web",
-        "rev": "116e3a32079d20bb77d71a549838b2674340c4cc",
-        "type": "github"
-      },
-      "original": {
-        "owner": "mercurytechnologies",
-        "ref": "jadel/users-list-pagination",
-        "repo": "slack-web",
-        "type": "github"
+        "nixpkgs": "nixpkgs"
       }
     }
   },
