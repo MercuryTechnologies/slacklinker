@@ -1,0 +1,50 @@
+{
+    "id": "-aaaaaaaaaaaaaaa",
+    "type": "deployment.canceled",
+    "createdAt": 1669757638081,
+    "payload": {
+        "deployment": {
+            "id": "dpl_AAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "meta": {
+                "githubCommitAuthorName": "Joe Smith",
+                "githubCommitMessage": "Add kittens",
+                "githubCommitOrg": "MercuryTechnologies",
+                "githubCommitRef": "some-ref",
+                "githubCommitRepo": "slacklinker",
+                "githubCommitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "githubDeployment": "1",
+                "githubOrg": "MercuryTechnologies",
+                "githubRepo": "slacklinker",
+                "githubRepoOwnerType": "Organization",
+                "githubCommitRepoId": "123467891",
+                "githubRepoId": "123467891",
+                "githubCommitAuthorLogin": "joesmith",
+                "githubPrId": "1234"
+            },
+            "name": "meows-sandbox",
+            "url": "meows-sandbox.vercel.app",
+            "inspectorUrl": "https://vercel.com/mercury-technologies/redacted"
+        },
+        "links": {
+            "deployment": "https://vercel.com/mercury-technologies/redacted",
+            "project": "https://vercel.com/mercury-technologies/redacted"
+        },
+        "name": "meows-sandbox",
+        "plan": "enterprise",
+        "project": {
+            "id": "prj_aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "regions": [
+            "iad1"
+        ],
+        "target": null,
+        "type": "LAMBDAS",
+        "url": "meows-sandbox.vercel.app",
+        "user": {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "team": {
+            "id": "team_aaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+    }
+}

@@ -1,0 +1,22 @@
+VercelWebhookPayload
+    { payload = DeploymentCanceled
+        ( DeploymentStatusPayload
+            { deployment = DeploymentInfo
+                { id = "dpl_AAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                , meta = DeploymentMeta
+                    { githubPrId = "1234"
+                    , githubOrg = "MercuryTechnologies"
+                    , githubRepo = "slacklinker"
+                    , githubCommitSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    , githubCommitRef = "some-ref"
+                    , githubCommitAuthorLogin = "joesmith"
+                    }
+                }
+            , name = "meows-sandbox"
+            , url = "meows-sandbox.vercel.app"
+            }
+        )
+    , id = "-aaaaaaaaaaaaaaa"
+    , createdAt = 1669757638081
+    , region = Nothing
+    }
