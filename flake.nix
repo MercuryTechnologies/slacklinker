@@ -1,11 +1,11 @@
 {
-  description = "Example Haskell flake showing overrides and adding stuff to the dev shell";
+  description = "Slacklinker Slack link bot";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     flake-compat = {
-      url = "github:edolstra/flake-compat";
+      url = "https://git.lix.systems/lix-project/flake-compat/archive/main.tar.gz";
       flake = false;
     };
   };
@@ -14,7 +14,7 @@
 
   outputs = { self, nixpkgs, flake-utils, ... }:
     let
-      ghcVer = "ghc924";
+      ghcVer = "ghc96";
       makeHaskellOverlay = overlay: final: prev: {
         haskell = prev.haskell // {
           packages = prev.haskell.packages // {
@@ -93,18 +93,19 @@
           in
           {
             slacklinker = build slacklinker;
-            slack-web = hprev.callHackageDirect
-              {
-                pkg = "slack-web";
-                ver = "1.6.1.0";
-                sha256 = "sha256-qM7doDWZywcNIdr8gHX8mj75cdEdMjFc4LNdDX+pNeM=";
-              }
-              { };
 
-            # someone (me) put too tight lower bounds lol
-            hs-opentelemetry-instrumentation-hspec = hlib.doJailbreak hprev.hs-opentelemetry-instrumentation-hspec;
-            # buggy output in 4.0.0.0 breaks tests in slack-web
-            pretty-simple = hfinal.pretty-simple_4_1_2_0;
+            # broken bounds. as mercury people, you can fix this upstream :)
+            slack-web = hlib.doJailbreak hprev.slack-web;
+
+            tmp-postgres = hlib.overrideSrc hprev.tmp-postgres ({
+              src = final.fetchFromGitHub {
+                owner = "lambdamechanic";
+                repo = "tmp-postgres";
+                # https://github.com/lambdamechanic/tmp-postgres/tree/master
+                rev = "4c4f4346ea5643d09cee349edac9060fab95a3cb";
+                sha256 = "sha256-vzfJIrzW7rRpA18rEAHVgQdKuEQ5Aep742MkDShxtj0=";
+              };
+            });
 
             # possible macOS lack-of-sandbox related breakage
             http2 = if prev.stdenv.isDarwin then hlib.dontCheck hprev.http2 else hprev.http2;
