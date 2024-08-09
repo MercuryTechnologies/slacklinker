@@ -40,7 +40,7 @@ in
     '';
   })).overrideAttrs (old: {
   # Don’t allow focused tests to pass CI
-  HSPEC_OPTIONS = "--fail-on-focused";
+  HSPEC_OPTIONS = "--fail-on=focused";
 
   disallowedReferences = badReferences;
 
