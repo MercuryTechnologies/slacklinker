@@ -76,6 +76,7 @@ class (Monad m, MonadLogger m) => HasApp m where
   getsApp :: (App -> a) -> m a
   getsApp f = f <$> getApp
 
+type role AppM nominal
 newtype AppM a = AppM {unAppM :: ReaderT App IO a}
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO, MonadThrow)
 

@@ -5,6 +5,7 @@ module Slacklinker.Settings.Types where
 import Slacklinker.Import
 import Slacklinker.PersistImport
 
+type role SlacklinkerSetting nominal
 data SlacklinkerSetting (a :: SlacklinkerSettingTag) where
   -- | Whether to allow any access to register new workspaces.
   SettingAllowRegistration :: Bool -> SlacklinkerSetting 'AllowRegistration

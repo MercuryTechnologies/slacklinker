@@ -189,6 +189,7 @@ default-extensions:
   - RankNTypes
   - RecordWildCards
   - RecursiveDo
+  - RoleAnnotations
   - ScopedTypeVariables
   - StandaloneDeriving
   - StandaloneKindSignatures

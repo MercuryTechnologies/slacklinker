@@ -14,7 +14,7 @@
 
   outputs = { self, nixpkgs, flake-utils, ... }:
     let
-      ghcVer = "ghc96";
+      ghcVer = "ghc98";
       makeHaskellOverlay = overlay: final: prev: {
         haskell = prev.haskell // {
           packages = prev.haskell.packages // {
