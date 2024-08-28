@@ -9,6 +9,7 @@ module Slacklinker.Sender (
   senderThread,
 ) where
 
+import Data.HashMap.Strict qualified as HM
 import Data.Text (splitOn)
 import Data.Vector qualified as V
 import Database.Esqueleto.Experimental qualified as E
@@ -22,6 +23,9 @@ import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
 import Slacklinker.Models
+import Slacklinker.Sender.Internal
+import Slacklinker.Sender.Types
+import Slacklinker.Sender.UserDataUpload
 import Slacklinker.Slack.ConversationsJoin
 import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Slacklinker.Types (Emoji (..))
@@ -31,9 +35,6 @@ import Web.Slack.Chat (PostMsgReq (..), PostMsgRsp (..), UpdateReq (..), UpdateR
 import Web.Slack.Conversation
 import Web.Slack.Pager (loadingPage)
 import Web.Slack.UsersConversations (usersConversationsAll)
-import Slacklinker.Sender.UserDataUpload
-import Slacklinker.Sender.Types
-import Slacklinker.Sender.Internal
 
 senderHandler :: (MonadIO m) => Text -> SomeException -> m ()
 senderHandler loc e = do
@@ -45,7 +46,7 @@ senderHandler loc e = do
       throwIO e
     Nothing -> do
       mspan <- OTel.lookupSpan <$> OTel.getContext
-      for_ mspan $ \span -> OTel.recordException span [] Nothing e
+      for_ mspan $ \span -> OTel.recordException span HM.empty Nothing e
       -- unexpected exception, log it
       putStrLn $ loc <> ": SENDER EXC: " <> pack (displayException e)
 
@@ -153,11 +154,13 @@ draftMessage workspace links =
 
     -- https://api.slack.com/reference/surfaces/formatting#date-formatting
     mkDate ts =
-      let -- Slack doesn't like decimals in dates
-          extractFirst (x : _) = x
-          extractFirst _ = ""
-          ts' = extractFirst $ splitOn "." ts
-       in concat ["<!date^", ts', "^{date_short_pretty} at {time}|datetime>"]
+      let
+        -- Slack doesn't like decimals in dates
+        extractFirst (x : _) = x
+        extractFirst _ = ""
+        ts' = extractFirst $ splitOn "." ts
+       in
+        concat ["<!date^", ts', "^{date_short_pretty} at {time}|datetime>"]
 
     toLink :: (LinkedMessage, Maybe KnownUser, JoinedChannel) -> Maybe Text
     toLink (LinkedMessage {messageTs, threadTs}, mUser, joinedChannel) =

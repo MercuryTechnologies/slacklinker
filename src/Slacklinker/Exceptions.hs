@@ -47,6 +47,7 @@ toServiceException = toException . ServiceException
 fromServiceException :: Exception e => SomeException -> Maybe e
 fromServiceException x = fromException x >>= \(ServiceException e) -> cast e
 
+type role DeriveServiceException representational
 newtype DeriveServiceException a = DeriveServiceException a
 
 instance Show e => Show (DeriveServiceException e) where

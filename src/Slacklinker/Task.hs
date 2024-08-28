@@ -17,6 +17,7 @@ instance ParseField SlacklinkerSettingTag
 
 instance ParseRecord SlacklinkerSettingTag
 
+type role Task nominal
 data Task w
   = SuggestMigrations
       { migrationName :: w ::: Text <?> "What to call the migration to generate"

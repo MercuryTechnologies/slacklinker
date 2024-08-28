@@ -18,6 +18,7 @@ import Control.Monad.Catch (MonadThrow)
 import Control.Monad.Logger (LogLevel (..), MonadLoggerIO, ToLogStr (..), defaultOutput)
 import Control.Monad.Logger.CallStack (MonadLoggerIO (..))
 import Data.ByteString.Char8 qualified as BS
+import Data.HashMap.Strict qualified as HM
 import Data.Pool (Pool, destroyAllResources)
 import Database.Persist.Postgresql (SqlBackend, createPostgresqlPool, runSqlPoolWithExtensibleHooks)
 import Database.Persist.SqlBackend.SqlPoolHooks
@@ -40,7 +41,7 @@ data AppConfig = AppConfig
   }
   deriving stock (Show)
 
-appSlackConfig :: HasApp m => SlackToken -> m SlackConfig
+appSlackConfig :: (HasApp m) => SlackToken -> m SlackConfig
 appSlackConfig (SlackToken slackConfigToken) = do
   slackConfigManager <- getsApp (.manager)
   pure SlackConfig {..}
@@ -75,6 +76,7 @@ class (Monad m, MonadLogger m) => HasApp m where
   getsApp :: (App -> a) -> m a
   getsApp f = f <$> getApp
 
+type role AppM nominal
 newtype AppM a = AppM {unAppM :: ReaderT App IO a}
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO, MonadThrow)
 
@@ -111,7 +113,7 @@ runDB act = do
   let pool = app.runtimeInfo.appPool
   liftIO $ runSqlPoolWithExtensibleHooks act pool Nothing hooks
   where
-    hooks = setAlterBackend defaultSqlPoolHooks $ OTel.wrapSqlBackend []
+    hooks = setAlterBackend defaultSqlPoolHooks $ OTel.wrapSqlBackend HM.empty
 
 readLogLevel :: [Char] -> LogLevel
 readLogLevel "debug" = LevelDebug
