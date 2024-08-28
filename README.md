@@ -86,6 +86,11 @@ You can set some runtime configuration settings in the database using
 `one-off-task set-setting`. A full list of these is in
 [`src/Slacklinker/Settings/Types.hs`](src/Slacklinker/Settings/Types.hs).
 
+Make Slacklinker not backlink to posts by these apps. This is helpful in making
+sure that Slacklinker won't backlink to itself. It is recommended to bput 
+Slacklinker's own app id here.
+- `BLOCKED_APP_IDS=appid1,appid2
+
 ### Usage
 
 Once you have the application running at some public URL, you need to authorize

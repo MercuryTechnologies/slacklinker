@@ -71,6 +71,7 @@ getAndSaveState = do
 
 getAuthorizeR :: AppM Text
 getAuthorizeR = do
+  logDebug "getAuthorizeR"
   ~(SettingAllowRegistration allowRegistration) <- runDB $ getSetting @'AllowRegistration
 
   -- FIXME(jadel): this doesn't let us get new scopes for existing workspaces
@@ -86,6 +87,7 @@ getAuthorizeR = do
 
 getOauthRedirectR :: Text -> Text -> AppM Text
 getOauthRedirectR code state = do
+  logDebug "getOauthRedirectR"
   ~(SettingAllowRegistration allowRegistration) <- runDB $ getSetting @'AllowRegistration
 
   -- FIXME(jadel): this doesn't let us get new scopes for existing workspaces
