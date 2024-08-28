@@ -20,6 +20,7 @@ import Control.Monad.Logger.CallStack (MonadLoggerIO (..))
 import Data.ByteString.Char8 qualified as BS
 import Data.HashMap.Strict qualified as HM
 import Data.Pool (Pool, destroyAllResources)
+import Data.Text (splitOn)
 import Database.Persist.Postgresql (SqlBackend, createPostgresqlPool, runSqlPoolWithExtensibleHooks)
 import Database.Persist.SqlBackend.SqlPoolHooks
 import Network.HTTP.Client (Manager)
@@ -38,6 +39,9 @@ data AppConfig = AppConfig
   , postgresConnectionString :: ByteString
   , sqlLogLevel :: LogLevel
   , logLevel :: LogLevel
+  -- do not backlink to posts from these apps
+  -- used to prevent infinite loops
+  , blockedAppIds :: [Text] 
   }
   deriving stock (Show)
 
@@ -130,6 +134,7 @@ getConfiguration = do
   postgresConnectionString <- getEnvBS "POSTGRES_CONNECTION_STRING"
   logLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_LEVEL"
   sqlLogLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_SQL"
+  blockedAppIds <- fmap (splitOn "," . decodeUtf8) (BS.pack <$> getEnv "BLOCKED_APP_IDS")
 
   pure AppConfig {..}
   where

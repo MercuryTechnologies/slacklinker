@@ -11,7 +11,9 @@ module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage)
 
 import Control.Monad.Extra (mapMaybeM)
 import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
-import Data.Aeson.Types (Parser, parse)
+import Data.Aeson.Types (Parser, parse, fromJSON)
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Span, addAttribute)
@@ -153,11 +155,34 @@ handleMessage ev teamId = do
         userId <- recordUser workspaceId ev.user
         recordLink workspaceId userId linkSource linkDestination
 
+parseBotMessageAsUserMessage :: Value -> Maybe MessageEvent
+parseBotMessageAsUserMessage v = case fromJSON (copyField "app_id" "user" v) of
+  Success result -> Just result
+  Error _        -> Nothing
+  where 
+    -- FIXME: add a BotMessageEvent type to the slack-web library
+    -- a bot message won't have a "user" field, lets populate it from the "app_id" field
+    copyField :: Text -> Text -> Value -> Value
+    copyField srcField destField = \case
+      Object obj -> case KeyMap.lookup (Key.fromText srcField) obj of
+        Just val -> Object (KeyMap.insert (Key.fromText destField) val obj)
+        Nothing -> Object obj -- Do nothing if the source field does not exist
+      otherJson -> otherJson -- Return unchanged if it's not an Object
+
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
-  addAttribute span "slack.conversation.id" ev.channel.unConversationId
-  handleMessage ev teamId
-  pure $ Object mempty
+  blocklist <- getsApp (.config.blockedAppIds)
+  case ev.appId of
+    -- its unclear why sometimes slack sends the event with subtype bot_message
+    -- and sometimes without it. in case slack's behavior changes in the future,
+    -- we really want to prevent infinite loops, so we check the blocklist here
+    -- as well
+    Just appId | appId `elem` blocklist -> pure $ Object mempty
+    _ -> do
+      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+      addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
+      handleMessage ev teamId
+      pure $ Object mempty
 -- if it's a bot message
 handleCallback (EventMessage _ev) _ _ = pure $ Object mempty
 handleCallback (EventMessageChanged) _ _ = pure $ Object mempty
@@ -181,22 +206,32 @@ handleCallback (EventChannelLeft l) teamId _ = do
   runDB $ do
     deleteBy $ UniqueJoinedChannel wsId l.channel
   pure $ Object mempty
-handleCallback (EventUnknown v) _ span = do
-  case parse typeAndSubtype v of
-    Success (type_, subtype) -> do
+handleCallback (EventUnknown v) teamId span = do
+  blocklist <- getsApp (.config.blockedAppIds)
+  case parse typeAndSubtypeAndAppId v of
+    Success ("message", Just "bot_message", Just appId) | appId `notElem` blocklist -> do
+      case parseBotMessageAsUserMessage v of
+        Just ev -> do
+          addAttribute span "slack.conversation.id" ev.channel.unConversationId
+          addAttribute span "slack.event.appId" appId
+          handleMessage ev teamId
+        Nothing -> logDebug $ "failed to parse bot message: " <> tshow v
+    Success (type_, subtype, appId) -> do
       addAttribute span "slack.event.type" type_
       addAttribute span "slack.event.subtype" (fromMaybe "" subtype)
+      addAttribute span "slack.event.appId" (fromMaybe "" appId)
       logUnknown
     _ -> logUnknown
   pure $ Object mempty
   where
     logUnknown = logDebug $ "unknown webhook callback: " <> tshow v
 
-    typeAndSubtype :: Value -> Parser (Text, Maybe Text)
-    typeAndSubtype = withObject "webhook event" \val -> do
+    typeAndSubtypeAndAppId :: Value -> Parser (Text, Maybe Text, Maybe Text)
+    typeAndSubtypeAndAppId = withObject "webhook event" \val -> do
       type_ <- val .: "type"
       subtype <- val .:? "subtype"
-      pure (type_, subtype)
+      appId <- val .:? "app_id"
+      pure (type_, subtype, appId)
 
 handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
