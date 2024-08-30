@@ -15,17 +15,6 @@
   outputs = { self, nixpkgs, flake-utils, ... }:
     let
       ghcVer = "ghc98";
-      makeHaskellOverlay = overlay: final: prev: {
-        haskell = prev.haskell // {
-          packages = prev.haskell.packages // {
-            ${ghcVer} = prev.haskell.packages."${ghcVer}".override (oldArgs: {
-              overrides =
-                prev.lib.composeExtensions (oldArgs.overrides or (_: _: { }))
-                  (overlay prev final);
-            });
-          };
-        };
-      };
 
       out = system:
         let
@@ -69,6 +58,7 @@
                 refinery-cli
                 postgresql
                 pgformatter # executable is called pg_format
+                cabal2nix
               ]);
               # Change the prompt to show that you are in a devShell
               # shellHook = "export PS1='\\e[1;34mdev > \\e[0m'";
@@ -78,40 +68,57 @@
     flake-utils.lib.eachDefaultSystem out // {
       # this stuff is *not* per-system
       overlays = {
-        default = makeHaskellOverlay (prev: final: hfinal: hprev:
-          let
-            hlib = prev.haskell.lib;
-            build = import ./nix/build.nix {
-              inherit prev final hfinal hprev;
-              werror = true;
-              testToolDepends = [
-                final.postgresql
-                final.refinery-cli
-              ];
+        default = self: super: {
+          haskell = super.haskell // {
+            packages = super.haskell.packages // {
+              ${ghcVer} = super.haskell.packages."${ghcVer}".override (oldArgs: {
+                overrides =
+                  self.lib.fold
+                    super.lib.composeExtensions
+                    (oldArgs.overrides or (_: _: { }))
+                    [ (self.haskell.lib.packageSourceOverrides {
+                        slacklinker = ./.;
+                      })
+
+                      (self.haskell.lib.packagesFromDirectory {
+                        directory = ./nix/deps;
+                      })
+
+                      (hself: hsuper: {
+                        slacklinker =
+                          import ./nix/build.nix
+                            { inherit super self hself hsuper;
+                              werror = true;
+                              testToolDepends = [
+                                self.postgresql
+                                self.refinery-cli
+                              ];
+                            }
+                            hsuper.slacklinker;
+
+                        # broken bounds. as mercury people, you can fix this
+                        # upstream :)
+                        slack-web =
+                          super.haskell.lib.doJailbreak hsuper.slack-web;
+
+                        tmp-postgres =
+                          super.haskell.lib.dontCheck hsuper.tmp-postgres;
+
+                        # possible macOS lack-of-sandbox related breakage
+                        http2 =
+                          if super.stdenv.isDarwin
+                          then super.haskell.lib.dontCheck hsuper.http2
+                          else hsuper.http2;
+
+                        # some kinda weird test issues on macOS
+                        port-utils =
+                          super.haskell.lib.dontCheck hsuper.port-utils;
+                      })
+                    ];
+              });
             };
-            slacklinker = hprev.callCabal2nix "slacklinker" ./. { };
-          in
-          {
-            slacklinker = build slacklinker;
-
-            # broken bounds. as mercury people, you can fix this upstream :)
-            slack-web = hlib.doJailbreak hprev.slack-web;
-
-            tmp-postgres = hlib.overrideSrc hprev.tmp-postgres ({
-              src = final.fetchFromGitHub {
-                owner = "lambdamechanic";
-                repo = "tmp-postgres";
-                # https://github.com/lambdamechanic/tmp-postgres/tree/master
-                rev = "4c4f4346ea5643d09cee349edac9060fab95a3cb";
-                sha256 = "sha256-vzfJIrzW7rRpA18rEAHVgQdKuEQ5Aep742MkDShxtj0=";
-              };
-            });
-
-            # possible macOS lack-of-sandbox related breakage
-            http2 = if prev.stdenv.isDarwin then hlib.dontCheck hprev.http2 else hprev.http2;
-            # some kinda weird test issues on macOS
-            port-utils = hlib.dontCheck hprev.port-utils;
-          });
+          };
+        };
       };
     };
 }
