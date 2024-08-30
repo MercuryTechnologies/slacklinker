@@ -154,3 +154,13 @@ files.
 
 Set log level with `LOG_LEVEL=debug` and SQL log level with `LOG_SQL=debug`
 environment variables.
+
+### Updating dependencies
+
+Some Haskell dependencies (such as tmp-postgress and slack-web) are overriden from source in [./nix/deps](https://github.com/MercuryTechnologies/slacklinker/tree/main/nix/deps). To update, use `cabal2nix` (available in your dev shell via nix develop).
+
+```
+cabal2nix "${GITHUB_URI}" > "./nix/deps/${PACKAGE_NAME}.nix"
+```
+
+That command will grab the latest git head from the repo. To get a specific version you can use `--revision`.
