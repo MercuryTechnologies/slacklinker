@@ -1,19 +1,19 @@
-{ prev, final, hfinal, hprev, werror, testToolDepends ? [] }: slacklinker:
+{ super, self, hself, hsuper, werror, testToolDepends ? [] }: slacklinker:
 let
-  hlib = prev.haskell.lib;
-  lib = prev.lib;
+  hlib = super.haskell.lib;
+  lib = super.lib;
   extraFiles = [ ../config ../db ];
   copy = f: "cp -R ${f} $out/${builtins.baseNameOf f}";
   migrateDeps = [
-    final.refinery-cli
+    self.refinery-cli
   ];
 
   # determined through use of `strings | grep /nix/store`
   # allegedly enableSeparateDataOutput does something, but I've not found that
   # to be true. So just nuke it. w/e.
   badReferences = [
-    hfinal.hs-opentelemetry-sdk
-    hfinal.warp
+    hself.hs-opentelemetry-sdk
+    hself.warp
   ];
 
   referencesCmdline = lib.concatMapStrings (x: "-t ${x} ") badReferences;
@@ -45,6 +45,6 @@ in
   disallowedReferences = badReferences;
 
   nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [
-    final.makeWrapper
+    self.makeWrapper
   ];
 })

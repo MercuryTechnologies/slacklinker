@@ -15,13 +15,13 @@
   outputs = { self, nixpkgs, flake-utils, ... }:
     let
       ghcVer = "ghc98";
-      makeHaskellOverlay = overlay: final: prev: {
-        haskell = prev.haskell // {
-          packages = prev.haskell.packages // {
-            ${ghcVer} = prev.haskell.packages."${ghcVer}".override (oldArgs: {
+      makeHaskellOverlay = overlay: self: super: {
+        haskell = super.haskell // {
+          packages = super.haskell.packages // {
+            ${ghcVer} = super.haskell.packages."${ghcVer}".override (oldArgs: {
               overrides =
-                prev.lib.composeExtensions (oldArgs.overrides or (_: _: { }))
-                  (overlay prev final);
+                super.lib.composeExtensions (oldArgs.overrides or (_: _: { }))
+                  (overlay super self);
             });
           };
         };
@@ -78,27 +78,27 @@
     flake-utils.lib.eachDefaultSystem out // {
       # this stuff is *not* per-system
       overlays = {
-        default = makeHaskellOverlay (prev: final: hfinal: hprev:
+        default = makeHaskellOverlay (super: self: hself: hsuper:
           let
-            hlib = prev.haskell.lib;
+            hlib = super.haskell.lib;
             build = import ./nix/build.nix {
-              inherit prev final hfinal hprev;
+              inherit super self hself hsuper;
               werror = true;
               testToolDepends = [
-                final.postgresql
-                final.refinery-cli
+                self.postgresql
+                self.refinery-cli
               ];
             };
-            slacklinker = hprev.callCabal2nix "slacklinker" ./. { };
+            slacklinker = hsuper.callCabal2nix "slacklinker" ./. { };
           in
           {
             slacklinker = build slacklinker;
 
             # broken bounds. as mercury people, you can fix this upstream :)
-            slack-web = hlib.doJailbreak hprev.slack-web;
+            slack-web = hlib.doJailbreak hsuper.slack-web;
 
-            tmp-postgres = hlib.overrideSrc hprev.tmp-postgres ({
-              src = final.fetchFromGitHub {
+            tmp-postgres = hlib.overrideSrc hsuper.tmp-postgres ({
+              src = self.fetchFromGitHub {
                 owner = "lambdamechanic";
                 repo = "tmp-postgres";
                 # https://github.com/lambdamechanic/tmp-postgres/tree/master
@@ -108,9 +108,9 @@
             });
 
             # possible macOS lack-of-sandbox related breakage
-            http2 = if prev.stdenv.isDarwin then hlib.dontCheck hprev.http2 else hprev.http2;
+            http2 = if super.stdenv.isDarwin then hlib.dontCheck hsuper.http2 else hsuper.http2;
             # some kinda weird test issues on macOS
-            port-utils = hlib.dontCheck hprev.port-utils;
+            port-utils = hlib.dontCheck hsuper.port-utils;
           });
       };
     };
