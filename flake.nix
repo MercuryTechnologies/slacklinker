@@ -88,16 +88,6 @@
                       # broken bounds. as mercury people, you can fix this upstream :)
                       slack-web = super.haskell.lib.doJailbreak hsuper.slack-web;
 
-                      tmp-postgres = super.haskell.lib.overrideSrc hsuper.tmp-postgres ({
-                        src = self.fetchFromGitHub {
-                          owner = "lambdamechanic";
-                          repo = "tmp-postgres";
-                          # https://github.com/lambdamechanic/tmp-postgres/tree/master
-                          rev = "4c4f4346ea5643d09cee349edac9060fab95a3cb";
-                          sha256 = "sha256-vzfJIrzW7rRpA18rEAHVgQdKuEQ5Aep742MkDShxtj0=";
-                        };
-                      });
-
                       # possible macOS lack-of-sandbox related breakage
                       http2 = if super.stdenv.isDarwin then super.haskell.lib.dontCheck hsuper.http2 else hsuper.http2;
                       # some kinda weird test issues on macOS
@@ -110,6 +100,9 @@
                       (oldArgs.overrides or (_: _: { }))
                       [ (self.haskell.lib.packageSourceOverrides {
                           slacklinker = ./.;
+                        })
+                        (self.haskell.lib.packagesFromDirectory {
+                          directory = ./nix/deps;
                         })
                         manualOverrides
                       ];
