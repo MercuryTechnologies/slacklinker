@@ -100,6 +100,9 @@
                         slack-web =
                           super.haskell.lib.doJailbreak hsuper.slack-web;
 
+                        tmp-postgres =
+                          super.haskell.lib.dontCheck hsuper.tmp-postgres;
+
                         # possible macOS lack-of-sandbox related breakage
                         http2 =
                           if super.stdenv.isDarwin
