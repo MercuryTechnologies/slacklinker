@@ -72,40 +72,45 @@
             packages = super.haskell.packages // {
               ${ghcVer} = super.haskell.packages."${ghcVer}".override (oldArgs: {
                 overrides =
-                  let
-                    manualOverrides = hself: hsuper: {
-                      slacklinker =
-                        import ./nix/build.nix
-                          { inherit super self hself hsuper;
-                            werror = true;
-                            testToolDepends = [
-                              self.postgresql
-                              self.refinery-cli
-                            ];
-                          }
-                          hsuper.slacklinker;
+                  self.lib.fold
+                    super.lib.composeExtensions
+                    (oldArgs.overrides or (_: _: { }))
+                    [ (self.haskell.lib.packageSourceOverrides {
+                        slacklinker = ./.;
+                      })
 
-                      # broken bounds. as mercury people, you can fix this upstream :)
-                      slack-web = super.haskell.lib.doJailbreak hsuper.slack-web;
+                      (self.haskell.lib.packagesFromDirectory {
+                        directory = ./nix/deps;
+                      })
 
-                      # possible macOS lack-of-sandbox related breakage
-                      http2 = if super.stdenv.isDarwin then super.haskell.lib.dontCheck hsuper.http2 else hsuper.http2;
-                      # some kinda weird test issues on macOS
-                      port-utils = super.haskell.lib.dontCheck hsuper.port-utils;
-                    };
+                      (hself: hsuper: {
+                        slacklinker =
+                          import ./nix/build.nix
+                            { inherit super self hself hsuper;
+                              werror = true;
+                              testToolDepends = [
+                                self.postgresql
+                                self.refinery-cli
+                              ];
+                            }
+                            hsuper.slacklinker;
 
-                  in
-                    self.lib.fold
-                      super.lib.composeExtensions
-                      (oldArgs.overrides or (_: _: { }))
-                      [ (self.haskell.lib.packageSourceOverrides {
-                          slacklinker = ./.;
-                        })
-                        (self.haskell.lib.packagesFromDirectory {
-                          directory = ./nix/deps;
-                        })
-                        manualOverrides
-                      ];
+                        # broken bounds. as mercury people, you can fix this
+                        # upstream :)
+                        slack-web =
+                          super.haskell.lib.doJailbreak hsuper.slack-web;
+
+                        # possible macOS lack-of-sandbox related breakage
+                        http2 =
+                          if super.stdenv.isDarwin
+                          then super.haskell.lib.dontCheck hsuper.http2
+                          else hsuper.http2;
+
+                        # some kinda weird test issues on macOS
+                        port-utils =
+                          super.haskell.lib.dontCheck hsuper.port-utils;
+                      })
+                    ];
               });
             };
           };
