@@ -83,7 +83,7 @@
                               self.refinery-cli
                             ];
                           }
-                          (hsuper.callCabal2nix "slacklinker" ./. { });
+                          hsuper.slacklinker;
 
                       # broken bounds. as mercury people, you can fix this upstream :)
                       slack-web = super.haskell.lib.doJailbreak hsuper.slack-web;
@@ -108,7 +108,10 @@
                     self.lib.fold
                       super.lib.composeExtensions
                       (oldArgs.overrides or (_: _: { }))
-                      [ manualOverrides
+                      [ (self.haskell.lib.packageSourceOverrides {
+                          slacklinker = ./.;
+                        })
+                        manualOverrides
                       ];
               });
             };
