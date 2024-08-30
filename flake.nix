@@ -15,17 +15,6 @@
   outputs = { self, nixpkgs, flake-utils, ... }:
     let
       ghcVer = "ghc98";
-      makeHaskellOverlay = overlay: self: super: {
-        haskell = super.haskell // {
-          packages = super.haskell.packages // {
-            ${ghcVer} = super.haskell.packages."${ghcVer}".override (oldArgs: {
-              overrides =
-                super.lib.composeExtensions (oldArgs.overrides or (_: _: { }))
-                  (overlay super self);
-            });
-          };
-        };
-      };
 
       out = system:
         let
@@ -78,40 +67,51 @@
     flake-utils.lib.eachDefaultSystem out // {
       # this stuff is *not* per-system
       overlays = {
-        default = makeHaskellOverlay (super: self: hself: hsuper:
-          let
-            hlib = super.haskell.lib;
-            build = import ./nix/build.nix {
-              inherit super self hself hsuper;
-              werror = true;
-              testToolDepends = [
-                self.postgresql
-                self.refinery-cli
-              ];
+        default = self: super: {
+          haskell = super.haskell // {
+            packages = super.haskell.packages // {
+              ${ghcVer} = super.haskell.packages."${ghcVer}".override (oldArgs: {
+                overrides =
+                  let
+                    manualOverrides = hself: hsuper: {
+                      slacklinker =
+                        import ./nix/build.nix
+                          { inherit super self hself hsuper;
+                            werror = true;
+                            testToolDepends = [
+                              self.postgresql
+                              self.refinery-cli
+                            ];
+                          }
+                          (hsuper.callCabal2nix "slacklinker" ./. { });
+
+                      # broken bounds. as mercury people, you can fix this upstream :)
+                      slack-web = super.haskell.lib.doJailbreak hsuper.slack-web;
+
+                      tmp-postgres = super.haskell.lib.overrideSrc hsuper.tmp-postgres ({
+                        src = self.fetchFromGitHub {
+                          owner = "lambdamechanic";
+                          repo = "tmp-postgres";
+                          # https://github.com/lambdamechanic/tmp-postgres/tree/master
+                          rev = "4c4f4346ea5643d09cee349edac9060fab95a3cb";
+                          sha256 = "sha256-vzfJIrzW7rRpA18rEAHVgQdKuEQ5Aep742MkDShxtj0=";
+                        };
+                      });
+
+                      # possible macOS lack-of-sandbox related breakage
+                      http2 = if super.stdenv.isDarwin then super.haskell.lib.dontCheck hsuper.http2 else hsuper.http2;
+                      # some kinda weird test issues on macOS
+                      port-utils = super.haskell.lib.dontCheck hsuper.port-utils;
+                    };
+
+                  in
+                    super.lib.composeExtensions
+                      (oldArgs.overrides or (_: _: { }))
+                      manualOverrides;
+              });
             };
-            slacklinker = hsuper.callCabal2nix "slacklinker" ./. { };
-          in
-          {
-            slacklinker = build slacklinker;
-
-            # broken bounds. as mercury people, you can fix this upstream :)
-            slack-web = hlib.doJailbreak hsuper.slack-web;
-
-            tmp-postgres = hlib.overrideSrc hsuper.tmp-postgres ({
-              src = self.fetchFromGitHub {
-                owner = "lambdamechanic";
-                repo = "tmp-postgres";
-                # https://github.com/lambdamechanic/tmp-postgres/tree/master
-                rev = "4c4f4346ea5643d09cee349edac9060fab95a3cb";
-                sha256 = "sha256-vzfJIrzW7rRpA18rEAHVgQdKuEQ5Aep742MkDShxtj0=";
-              };
-            });
-
-            # possible macOS lack-of-sandbox related breakage
-            http2 = if super.stdenv.isDarwin then hlib.dontCheck hsuper.http2 else hsuper.http2;
-            # some kinda weird test issues on macOS
-            port-utils = hlib.dontCheck hsuper.port-utils;
-          });
+          };
+        };
       };
     };
 }
