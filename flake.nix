@@ -105,9 +105,11 @@
                     };
 
                   in
-                    super.lib.composeExtensions
+                    self.lib.fold
+                      super.lib.composeExtensions
                       (oldArgs.overrides or (_: _: { }))
-                      manualOverrides;
+                      [ manualOverrides
+                      ];
               });
             };
           };
