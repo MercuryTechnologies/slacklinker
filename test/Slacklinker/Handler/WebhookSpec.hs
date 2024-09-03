@@ -58,6 +58,22 @@ messageEventWithBlocks ts blocks =
     , threadTs = Nothing
     , appId = Nothing
     , botId = Nothing
+    , attachments = Nothing
+    }
+
+botMessageEventWithBlocks :: Text -> [SlackBlock] -> BotMessageEvent
+botMessageEventWithBlocks ts blocks =
+  BotMessageEvent
+    { blocks = Just blocks
+    , channel = ConversationId "C043YJGBY49"
+    , text = "nobody looks at this"
+    , channelType = Channel
+    , ts
+    , files = Nothing
+    , threadTs = Nothing
+    , appId = Just "XYZ123"
+    , botId = "123XYZ"
+    , attachments = Nothing
     }
 
 -- XXX: lol, DuplicateRecordFields makes update syntax not work if two fields
@@ -68,6 +84,12 @@ updateThreadTs MessageEvent {..} newThreadTs = MessageEvent {threadTs = newThrea
 doLink :: (HasApp m, MonadUnliftIO m) => TeamId -> Text -> Text -> m MessageEvent
 doLink teamId ts url = do
   let msg = messageEventWithBlocks ts [SlackBlockRichText . urlRichText $ url]
+  handleMessage msg teamId
+  pure msg
+
+doBotLink :: (HasApp m, MonadUnliftIO m) => TeamId -> Text -> Text -> m BotMessageEvent
+doBotLink teamId ts url = do
+  let msg = botMessageEventWithBlocks ts [SlackBlockRichText . urlRichText $ url]
   handleMessage msg teamId
   pure msg
 
@@ -88,6 +110,24 @@ spec = do
         (wsId, teamId) <- createWorkspace
         let (url, parts) = sampleUrl
         msg <- doLink teamId ts1 url
+
+        -- FIXME: MonadFail instead of irrefutable pattern crimes
+        ~(Just (Entity rtId _thread)) <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
+
+        ~[Entity _ theLink] <- runDB $ selectList [LinkedMessageRepliedThreadId ==. rtId] []
+        ~(Just (Entity channelId _)) <- runDB $ getBy $ UniqueJoinedChannel wsId msg.channel
+
+        liftIO $ do
+          -- This should name the message that triggered slacklinker
+          theLink.joinedChannelId `shouldBe` channelId
+          theLink.messageTs `shouldBe` msg.ts
+          theLink.threadTs `shouldBe` Nothing
+          theLink.sent `shouldBe` False
+    it "can deal with a bot link" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let (url, parts) = sampleUrl
+        msg <- doBotLink teamId ts1 url
 
         -- FIXME: MonadFail instead of irrefutable pattern crimes
         ~(Just (Entity rtId _thread)) <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
