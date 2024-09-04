@@ -23,28 +23,12 @@ class ExtractableMessage m where
     extractData :: m -> ExtractedMessageData
 
 instance ExtractableMessage MessageEvent where
-    extractData MessageEvent {..} = 
-        ExtractedMessageData
-          { channelType
-          , channel
-          , user
-          , ts
-          , threadTs
-          , text
-          , blocks
-          , files
-          }
+    extractData MessageEvent {..} = ExtractedMessageData {..}
 
 instance ExtractableMessage BotMessageEvent where
     extractData BotMessageEvent {..} = 
         ExtractedMessageData
-          { channelType
-          , channel
-          -- a bit of a hack, but user ids and bot ids don't overlap
-          , user = Slack.UserId { unUserId = botId }
-          , ts
-          , threadTs
-          , text
-          , blocks
-          , files
+          { -- a bit of a hack, but user ids and bot ids don't overlap
+            user = Slack.UserId { unUserId = botId }
+          , ..
           }
