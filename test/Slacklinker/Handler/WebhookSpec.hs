@@ -102,7 +102,7 @@ spec = do
           theLink.threadTs `shouldBe` Nothing
           theLink.sent `shouldBe` False
 
-    it "will not link a message within the same thread" \app -> do
+    fit "will not link a message within the same thread" \app -> do
       runAppM app $ do
         (wsId, teamId) <- createWorkspace
         let (url, parts) = sampleUrl
@@ -114,8 +114,9 @@ spec = do
         handleMessage msg teamId
 
         -- We should not plan a reply to a thread that links to itself
-        ~Nothing <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
-        pure ()
+        res <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
+        putStrLn $ tshow res
+        liftIO $ isNothing res `shouldBe` True
 
     it "will file a link to a message downthread as the same thread as linking the parent" \app -> do
       runAppM app $ do
