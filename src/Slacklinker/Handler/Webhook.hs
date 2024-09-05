@@ -11,9 +11,7 @@ module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage)
 
 import Control.Monad.Extra (mapMaybeM)
 import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
-import Data.Aeson.Types (Parser, parse, fromJSON)
-import Data.Aeson.Key qualified as Key
-import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Aeson.Types (Parser, parse)
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Span, addAttribute)
@@ -30,6 +28,7 @@ import Web.Slack.Experimental.Events.Types
 import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, SlackVerificationFailed (..), validateRequest)
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
+import Slacklinker.Extract.Types
 
 extractLinks :: SlackBlock -> [Text]
 extractLinks block =
@@ -124,8 +123,8 @@ recordUser workspaceId slackUserId = do
 workspaceByTeamId :: (HasApp m, MonadIO m) => TeamId -> m (Entity Workspace)
 workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (`orThrow` UnknownWorkspace teamId)
 
-handleMessage :: (HasApp m, MonadUnliftIO m) => MessageEvent -> TeamId -> m ()
-handleMessage ev teamId = do
+handleMessage :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> TeamId -> m ()
+handleMessage msg teamId = do
   workspace <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
@@ -141,6 +140,7 @@ handleMessage ev teamId = do
       -- we don't do these
       pure ()
   where
+    ev = extractData msg
     handleUrl workspaceId url = do
       let linkSource =
             SlackUrlParts
@@ -154,20 +154,6 @@ handleMessage ev teamId = do
         -- the same transaction.
         userId <- recordUser workspaceId ev.user
         recordLink workspaceId userId linkSource linkDestination
-
-parseBotMessageAsUserMessage :: Value -> Maybe MessageEvent
-parseBotMessageAsUserMessage v = case fromJSON (copyField "app_id" "user" v) of
-  Success result -> Just result
-  Error _        -> Nothing
-  where 
-    -- FIXME: add a BotMessageEvent type to the slack-web library
-    -- a bot message won't have a "user" field, lets populate it from the "app_id" field
-    copyField :: Text -> Text -> Value -> Value
-    copyField srcField destField = \case
-      Object obj -> case KeyMap.lookup (Key.fromText srcField) obj of
-        Just val -> Object (KeyMap.insert (Key.fromText destField) val obj)
-        Nothing -> Object obj -- Do nothing if the source field does not exist
-      otherJson -> otherJson -- Return unchanged if it's not an Object
 
 handleCallback :: Event -> TeamId -> Span -> AppM Value
 handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
@@ -183,8 +169,18 @@ handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
       addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
       handleMessage ev teamId
       pure $ Object mempty
--- if it's a bot message
+-- a regular message with no subtype, but one that has a botId
 handleCallback (EventMessage _ev) _ _ = pure $ Object mempty
+-- a message with bot_message subtype
+handleCallback (EventBotMessage ev) teamId span = do
+  blocklist <- getsApp (.config.blockedAppIds)
+  case ev.appId of
+    Just appId | appId `elem` blocklist -> pure $ Object mempty
+    _ -> do
+      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+      addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
+      handleMessage ev teamId
+      pure $ Object mempty
 handleCallback (EventMessageChanged) _ _ = pure $ Object mempty
 handleCallback (EventChannelJoinMessage) _ _ = pure $ Object mempty
 handleCallback (EventChannelCreated createdEvent) teamId _ = do
@@ -206,16 +202,8 @@ handleCallback (EventChannelLeft l) teamId _ = do
   runDB $ do
     deleteBy $ UniqueJoinedChannel wsId l.channel
   pure $ Object mempty
-handleCallback (EventUnknown v) teamId span = do
-  blocklist <- getsApp (.config.blockedAppIds)
+handleCallback (EventUnknown v) _ span = do
   case parse typeAndSubtypeAndAppId v of
-    Success ("message", Just "bot_message", Just appId) | appId `notElem` blocklist -> do
-      case parseBotMessageAsUserMessage v of
-        Just ev -> do
-          addAttribute span "slack.conversation.id" ev.channel.unConversationId
-          addAttribute span "slack.event.appId" appId
-          handleMessage ev teamId
-        Nothing -> logDebug $ "failed to parse bot message: " <> tshow v
     Success (type_, subtype, appId) -> do
       addAttribute span "slack.event.type" type_
       addAttribute span "slack.event.subtype" (fromMaybe "" subtype)

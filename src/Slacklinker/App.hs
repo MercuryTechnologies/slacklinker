@@ -15,6 +15,7 @@ module Slacklinker.App (
 ) where
 
 import Control.Monad.Catch (MonadThrow)
+import Control.Monad.Fail (MonadFail(..))
 import Control.Monad.Logger (LogLevel (..), MonadLoggerIO, ToLogStr (..), defaultOutput)
 import Control.Monad.Logger.CallStack (MonadLoggerIO (..))
 import Data.ByteString.Char8 qualified as BS
@@ -105,6 +106,9 @@ instance MonadLoggerIO AppM where
 instance HasApp AppM where
   getApp = do
     AppM ask
+
+instance MonadFail AppM where
+  fail string = liftIO (fail string)
 
 runAppM :: App -> AppM a -> IO a
 runAppM app act = do
