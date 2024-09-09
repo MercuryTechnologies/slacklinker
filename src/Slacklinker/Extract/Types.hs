@@ -16,6 +16,7 @@ data ExtractedMessageData = ExtractedMessageData
   , text :: Text
   , blocks :: Maybe [SlackBlock]
   , files :: Maybe [FileObject]
+  , attachments :: Maybe [MessageAttachment]
   }
   deriving stock (Show)
 

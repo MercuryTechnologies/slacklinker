@@ -104,6 +104,7 @@ tests:
       - hspec-expectations
       - hspec-golden >= 0.2
       - slacklinker
+      - string-variants
       - tmp-postgres
 
   test-dev:
@@ -124,6 +125,7 @@ tests:
       - hspec-core
       - hspec-expectations
       - hspec-golden >= 0.2
+      - string-variants
       - tmp-postgres
     when:
       - condition: flag(local-dev)

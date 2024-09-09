@@ -29,9 +29,10 @@ import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackS
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 import Slacklinker.Extract.Types
+import Data.List (nub)
 
-extractLinks :: SlackBlock -> [Text]
-extractLinks block =
+extractBlockLinks :: SlackBlock -> [Text]
+extractBlockLinks block =
   fromBlock block
   where
     fromBlock (SlackBlockRichText rt) = fromRichText rt
@@ -43,6 +44,18 @@ extractLinks block =
 
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
     fromRichItem _ = []
+
+extractAttachedLinks :: MessageAttachment -> [Text]
+extractAttachedLinks attachment = concat [fromUrlLinks, blockLinks]
+  where
+    fromUrlLinks :: [Text]
+    fromUrlLinks = maybeToList attachment.fromUrl
+
+    blockLinks :: [Text]
+    blockLinks = concatMap extractBlockLinksFromMessageBlock (fromMaybe [] attachment.messageBlocks)
+
+    extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [Text]
+    extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
 
 data MessageDestination = MessageDestination
   { replyToTs :: Maybe Text
@@ -128,7 +141,9 @@ handleMessage msg teamId = do
   workspace <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
-      let links = mconcat $ extractLinks <$> fromMaybe [] ev.blocks
+      let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
+          attachedLinks = mconcat $ extractAttachedLinks <$> fromMaybe [] ev.attachments
+          links = nub $ blockLinks <> attachedLinks
       repliedThreadIds <- mapMaybeM (handleUrl $ entityKey workspace) links
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
@@ -167,6 +182,7 @@ handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
     _ -> do
       addAttribute span "slack.conversation.id" ev.channel.unConversationId
       addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
+      addAttribute span "slack.event.isMsgUnfurl" $ maybe False (any (maybe False (== True) . isMsgUnfurl)) ev.attachments
       handleMessage ev teamId
       pure $ Object mempty
 -- a regular message with no subtype, but one that has a botId
@@ -179,6 +195,7 @@ handleCallback (EventBotMessage ev) teamId span = do
     _ -> do
       addAttribute span "slack.conversation.id" ev.channel.unConversationId
       addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
+      addAttribute span "slack.event.isMsgUnfurl" $ maybe False (any (maybe False (== True) . isMsgUnfurl)) ev.attachments
       handleMessage ev teamId
       pure $ Object mempty
 handleCallback (EventMessageChanged) _ _ = pure $ Object mempty
