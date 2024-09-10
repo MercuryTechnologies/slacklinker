@@ -41,6 +41,7 @@ dependencies:
   - pretty-simple
   - resource-pool
   - safe
+  - scientific
   - servant
   - servant-client
   - servant-client-core
