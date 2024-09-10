@@ -10,11 +10,12 @@
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage) where
 
 import Control.Monad.Extra (mapMaybeM)
-import Data.Aeson (Result (..), Value (Object), (.:), (.:?))
+import Data.Aeson (Result (..), Value (Object), (.:), (.:?), decodeStrict)
 import Data.Aeson.Types (Parser, parse)
+import Data.HashMap.Strict qualified as HashMap
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
-import OpenTelemetry.Trace.Core (Span, addAttribute)
+import OpenTelemetry.Trace.Core (Span, addAttribute, addAttributes)
 import Slacklinker.App
 import Slacklinker.Exceptions
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
@@ -260,8 +261,14 @@ postSlackInteractiveWebhookR sig ts body = do
         -- This variant appears *after* the message has been cryptographically
         -- verified, so any appearance of this is probably a slack-web FromJSON
         -- bug.
-        VerificationCannotParse _msg ->
-          withCurrentSpan \s -> addAttribute s "payload" (decodeUtf8 body)
+        VerificationCannotParse _msg -> do
+          -- waiting on a bugfix
+          -- https://github.com/iand675/hs-opentelemetry/tree/attribute-length-limit-fix
+          -- in the meantime, this will help us find issues
+          let attrs = maybe [] (flattenJsonToAttributes "payload") (decodeStrict body)
+          withCurrentSpan \s -> do 
+            addAttribute s "payload" (decodeUtf8 body)
+            addAttributes s (HashMap.fromList attrs)
         _ -> pure ()
       throwIO $ VerificationException err
     Right todo -> do
