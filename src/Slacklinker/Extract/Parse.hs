@@ -1,24 +1,23 @@
 module Slacklinker.Extract.Parse (
-    extractUrls
-    , extractRawLinks
-    , parseUrl
-)
-where
+  extractUrls,
+  extractRawLinks,
+  parseUrl,
+) where
 
+import Control.Applicative (pure, (*>), (<*))
+import Control.Monad (void)
 import Data.Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Function (($), (.))
+import Data.List (concatMap)
+import Data.Maybe
 import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Text qualified as T
+import Data.Tuple (snd)
+import Data.Vector qualified as V
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
-import Data.Maybe
-import Data.Function ((.), ($))
-import Control.Applicative ((<*), (*>), pure)
-import Data.Aeson.KeyMap qualified as KeyMap
-import Data.List (concatMap)
-import Data.Tuple (snd)
-import Control.Monad (void)
-import Data.Vector qualified as V
 
 type Parser = Parsec Void Text
 
@@ -33,7 +32,6 @@ parseUrl subdomain = try $ do
   timestamp <- some digitChar
   pure $ T.concat ["https://", subdomain, ".slack.com/archives/", T.pack channelId, "/p", T.pack timestamp]
 
-
 extractUrls :: Text -> Text -> [Text]
 extractUrls subdomain input = fromMaybe [] $ parseMaybe urlsParser input
   where
@@ -44,7 +42,7 @@ extractUrls subdomain input = fromMaybe [] $ parseMaybe urlsParser input
     -- Parse a list of URLs
     urlsParser :: Parser [Text]
     urlsParser = many (notUrl *> parseUrl' <* notUrl)
-    
+
     -- Consume any non-URL characters (zero or more)
     notUrl :: Parser ()
     notUrl = skipMany $ notFollowedBy parseUrl' *> anySingle

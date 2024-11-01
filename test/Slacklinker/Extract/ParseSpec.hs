@@ -1,7 +1,7 @@
 module Slacklinker.Extract.ParseSpec (spec) where
 
-import TestImport
 import Slacklinker.Extract.Parse (extractUrls)
+import TestImport
 
 spec :: Spec
 spec = describe "Free Text URL Parsing" do
@@ -23,4 +23,3 @@ spec = describe "Free Text URL Parsing" do
   it "Parses URLs with newlines and formatting" do
     let urls = extractUrls "myteam" "this is a fake pr with a link\n\n<https://myteam.slack.com/archives/C07KTH1T4CQ/p1730339894629249|https://myteam.slack.com/archives/C07KTH1T4CQ/p1730339894629249>\n and some content"
     urls `shouldBe` ["https://myteam.slack.com/archives/C07KTH1T4CQ/p1730339894629249", "https://myteam.slack.com/archives/C07KTH1T4CQ/p1730339894629249"]
-  
