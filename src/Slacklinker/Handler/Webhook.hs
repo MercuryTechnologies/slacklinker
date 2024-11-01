@@ -17,9 +17,7 @@ import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Span, addAttribute, addAttributes, ToAttribute (toAttribute), Attribute)
 import Slacklinker.App
-import Slacklinker.Exceptions
-    ( UnknownWorkspace(UnknownWorkspace),
-      VerificationException(VerificationException) )
+import Slacklinker.Exceptions (UnknownWorkspace(UnknownWorkspace), VerificationException(VerificationException))
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
 import Slacklinker.Models
@@ -241,6 +239,7 @@ addEventAttributes event teamId span = do
     filterMaybes :: [(a, Maybe b)] -> [(a, b)]
     filterMaybes = mapMaybe sequenceA
 
+    -- adding these helps with debugging and adding new features to slacklinker
     unknownAttributes :: Value -> Parser [(Text, Attribute)]
     unknownAttributes = withObject "webhook event" \val -> do
       type_ <- val .: "type" :: Parser Text
