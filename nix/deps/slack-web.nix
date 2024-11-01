@@ -11,11 +11,11 @@
 }:
 mkDerivation {
   pname = "slack-web";
-  version = "2.0.0.3";
+  version = "2.0.0.4";
   src = fetchgit {
     url = "https://github.com/MercuryTechnologies/slack-web";
-    sha256 = "0dpa7nzpzvmrpqh1brr44vw97liij8bn2a96v430gmik507cs5f4";
-    rev = "4dc4e3c328b5643ce3ecad244d9b32496213fa86";
+    sha256 = "sha256-sMmlGMzbj8xy+joqN/Ohok1Q+B3pZDUFCMnqu5xi+a8=";
+    rev = "649186a790a79547ecd16836af5789c93a195a95";
     fetchSubmodules = true;
   };
   isLibrary = true;

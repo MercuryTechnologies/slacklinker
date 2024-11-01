@@ -15,7 +15,7 @@ import Data.Aeson.Types (Parser, parse)
 import Data.HashMap.Strict qualified as HashMap
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
-import OpenTelemetry.Trace.Core (Span, addAttribute, addAttributes)
+import OpenTelemetry.Trace.Core (Span, addAttribute, addAttributes, ToAttribute (toAttribute), Attribute)
 import Slacklinker.App
 import Slacklinker.Exceptions
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
@@ -30,11 +30,11 @@ import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackS
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 import Slacklinker.Extract.Types
+import Slacklinker.Extract.Parse (extractRawLinks)
 import Data.List (nub)
 
 extractBlockLinks :: SlackBlock -> [Text]
-extractBlockLinks block =
-  fromBlock block
+extractBlockLinks = fromBlock
   where
     fromBlock (SlackBlockRichText rt) = fromRichText rt
     fromBlock _ = []
@@ -46,14 +46,14 @@ extractBlockLinks block =
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
     fromRichItem _ = []
 
-extractAttachedLinks :: MessageAttachment -> [Text]
-extractAttachedLinks attachment = concat [fromUrlLinks, blockLinks]
+extractAttachedLinks :: DecodedMessageAttachment -> [Text]
+extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
   where
     fromUrlLinks :: [Text]
     fromUrlLinks = maybeToList attachment.fromUrl
 
     blockLinks :: [Text]
-    blockLinks = concatMap extractBlockLinksFromMessageBlock (fromMaybe [] attachment.messageBlocks)
+    blockLinks = maybe [] (concatMap extractBlockLinksFromMessageBlock) attachment.messageBlocks
 
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [Text]
     extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
@@ -139,19 +139,20 @@ workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (
 
 handleMessage :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> TeamId -> m ()
 handleMessage msg teamId = do
-  workspace <- workspaceByTeamId teamId
+  workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
       let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
-          attachedLinks = mconcat $ extractAttachedLinks <$> fromMaybe [] ev.attachments
-          links = nub $ blockLinks <> attachedLinks
-      repliedThreadIds <- mapMaybeM (handleUrl $ entityKey workspace) links
+          attachedLinks = mconcat $ extractAttachedLinks <$> mapMaybe decoded (fromMaybe [] ev.attachments)
+          rawLinks = mconcat $ extractRawLinks workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
+          links = nub $ blockLinks <> attachedLinks <> rawLinks
+      repliedThreadIds <- mapMaybeM (handleUrl workspaceId) links
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
       forM_ repliedThreadIds $ \todo -> do
         for_ todo $ senderEnqueue . UpdateReply
     Im -> do
-      handleImCommand (workspaceMetaFromWorkspaceE workspace) ev.channel ev.text ev.files
+      handleImCommand (workspaceMetaFromWorkspaceE workspaceE) ev.channel ev.text ev.files
     Group ->
       -- we don't do these
       pure ()
@@ -171,81 +172,142 @@ handleMessage msg teamId = do
         userId <- recordUser workspaceId ev.user
         recordLink workspaceId userId linkSource linkDestination
 
-handleCallback :: Event -> TeamId -> Span -> AppM Value
-handleCallback (EventMessage ev) teamId span | isNothing ev.botId = do
-  blocklist <- getsApp (.config.blockedAppIds)
-  case ev.appId of
-    -- its unclear why sometimes slack sends the event with subtype bot_message
-    -- and sometimes without it. in case slack's behavior changes in the future,
-    -- we really want to prevent infinite loops, so we check the blocklist here
-    -- as well
-    Just appId | appId `elem` blocklist -> pure $ Object mempty
-    _ -> do
+addEventAttributes :: Event -> TeamId -> Span -> AppM ()
+addEventAttributes event teamId span = do
+  addAttribute span "slack.team.id" teamId.unTeamId
+  case event of
+    EventMessage ev -> do
+      addAttribute span "slack.event.type" ("message" :: Text)
       addAttribute span "slack.conversation.id" ev.channel.unConversationId
       addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
-      addAttribute span "slack.event.isMsgUnfurl" $ maybe False (any (maybe False (== True) . isMsgUnfurl)) ev.attachments
-      handleMessage ev teamId
-      pure $ Object mempty
--- a regular message with no subtype, but one that has a botId
-handleCallback (EventMessage _ev) _ _ = pure $ Object mempty
--- a message with bot_message subtype
-handleCallback (EventBotMessage ev) teamId span = do
-  blocklist <- getsApp (.config.blockedAppIds)
-  case ev.appId of
-    Just appId | appId `elem` blocklist -> pure $ Object mempty
-    _ -> do
+      addAttribute span "slack.event.botId" (fromMaybe "" ev.botId)
+      addAttachmentAttributes ev.attachments span
+    EventBotMessage ev -> do
+      addAttribute span "slack.event.type" ("message" :: Text)
+      addAttribute span "slack.event.subtype" ("bot_message" :: Text)
       addAttribute span "slack.conversation.id" ev.channel.unConversationId
       addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
-      addAttribute span "slack.event.isMsgUnfurl" $ maybe False (any (maybe False (== True) . isMsgUnfurl)) ev.attachments
-      handleMessage ev teamId
-      pure $ Object mempty
-handleCallback (EventMessageChanged) _ _ = pure $ Object mempty
-handleCallback (EventChannelJoinMessage) _ _ = pure $ Object mempty
-handleCallback (EventChannelCreated createdEvent) teamId _ = do
-  -- join new channels
-  -- FIXME(jadel): should this be configurable behaviour?
-  Entity workspaceId workspace <- workspaceByTeamId teamId
-  senderEnqueue $
-    JoinChannel
+      addAttribute span "slack.event.botId" ev.botId
+      addAttachmentAttributes ev.attachments span
+    EventMessageChanged -> do
+      addAttribute span "slack.event.type" ("message" :: Text)
+      addAttribute span "slack.event.subtype" ("message_changed" :: Text)
+      pure ()
+    EventChannelJoinMessage -> do
+      addAttribute span "slack.event.type" ("message" :: Text)
+      addAttribute span "slack.event.subtype" ("channel_join" :: Text)
+      pure ()
+    EventChannelCreated ev -> do
+      addAttribute span "slack.event.type" ("channel_created" :: Text)
+      addAttribute span "slack.channel.id" ev.channel.id.unConversationId
+      addAttribute span "slack.channel.name" ev.channel.name
+      addAttribute span "slack.channel.team.id" ev.channel.contextTeamId.unTeamId
+    EventChannelLeft ev -> do
+      addAttribute span "slack.event.type" ("channel_left" :: Text)
+      addAttribute span "slack.channel.id" ev.channel.unConversationId
+      addAttribute span "slack.channel.actor.id" ev.actorId.unUserId
+    EventUnknown v -> case parse unknownAttributes v of
+        Success attrs -> for_ attrs \(attrName, attrVal) -> addAttribute span ("slack.event." <> attrName) attrVal
+        _ -> pure ()
+
+  pure ()
+  where
+    addAttachmentAttributes :: Maybe [MessageAttachment] -> Span -> AppM ()
+    addAttachmentAttributes mAttachments s = do
+      addAttribute s "slack.event.hasAttachments" $ maybe False (not . null) mAttachments
+      addAttribute s "slack.event.numAttachments" $ maybe 0 length mAttachments
+      case mAttachments of
+        Nothing -> pure ()
+        Just attachments -> do
+          addAttribute s "slack.event.attachments.hasMsgUnfurl" $ any hasMsgUnfurl attachments
+          addAttribute s "slack.event.attachments.hasNoMessageBlocks" $ any hasNoMessageBlocks attachments
+          addAttribute s "slack.event.attachments.hasUndecodable" $ any hasUndecodable attachments
+      pure ()
+    
+    hasMsgUnfurl  :: MessageAttachment -> Bool
+    hasMsgUnfurl = fromMaybe False . (decoded >=> isMsgUnfurl)
+
+    -- decoded >=> (pure . isNothing . messageBlocks) - if decoding succeeds, checks if its messageBlocks field is Nothing
+    -- fromMaybe True - if decoding fails, we treat it as having no message blocks (True)
+    hasNoMessageBlocks :: MessageAttachment -> Bool
+    hasNoMessageBlocks = fromMaybe True . (decoded >=> (pure . isNothing . messageBlocks))
+
+    hasUndecodable :: MessageAttachment -> Bool
+    hasUndecodable = isNothing . decoded
+
+    filterMaybes :: [(a, Maybe b)] -> [(a, b)]
+    filterMaybes = mapMaybe sequenceA
+
+    -- adding these helps with debugging and adding new features to slacklinker
+    unknownAttributes :: Value -> Parser [(Text, Attribute)]
+    unknownAttributes = withObject "webhook event" \val -> do
+      type_ <- val .: "type" :: Parser Text
+      subtype <- val .:? "subtype" :: Parser (Maybe Text)
+      appId <- val .:? "app_id" :: Parser (Maybe Text)
+      botId <- val .:? "bot_id" :: Parser (Maybe Text)
+      userId <- val .:? "user" :: Parser (Maybe Text)
+      channelId <- val .:? "channel" :: Parser (Maybe Text)
+      ts <- val .:? "ts" :: Parser (Maybe Text)
+      team <- val .:? "team" :: Parser (Maybe Text)
+      attachments <- val .:? "attachments" :: Parser (Maybe [Value])
+      pure $ filterMaybes
+        [ ("type", Just $ toAttribute type_)
+        , ("subtype", toAttribute <$> subtype)
+        , ("appId", toAttribute <$> appId)
+        , ("botId", toAttribute <$> botId)
+        , ("userId", toAttribute <$> userId)
+        , ("channelId", toAttribute <$> channelId)
+        , ("ts", toAttribute <$> ts)
+        , ("team", toAttribute <$> team)
+        , ("hasAttachments", Just . toAttribute . maybe False (not . null) $ attachments)
+        , ("numAttachments", Just . toAttribute . maybe 0 length $ attachments)
+        ]
+
+handleCallback :: Event -> TeamId -> AppM ()
+handleCallback event teamId = case event of
+  -- Handle both regular and bot messages uniformly. 
+  -- Some regular messages may actually be bot messages, maybe legacy bots.
+  EventMessage ev -> handleMessage' ev 
+  EventBotMessage ev -> handleMessage' ev
+  
+  -- Join newly created channels
+  EventChannelCreated ev -> do
+    Entity workspaceId workspace <- workspaceByTeamId teamId
+    senderEnqueue $ JoinChannel 
       WorkspaceMeta
         { slackTeamId = workspace.slackTeamId
         , token = workspace.slackOauthToken
         , workspaceId
         }
-      createdEvent.channel.id
-  pure $ Object mempty
-handleCallback (EventChannelLeft l) teamId _ = do
-  -- remove our database entry stating we're in it
-  Entity wsId _ <- workspaceByTeamId teamId
-  runDB $ do
-    deleteBy $ UniqueJoinedChannel wsId l.channel
-  pure $ Object mempty
-handleCallback (EventUnknown v) _ span = do
-  case parse typeAndSubtypeAndAppId v of
-    Success (type_, subtype, appId) -> do
-      addAttribute span "slack.event.type" type_
-      addAttribute span "slack.event.subtype" (fromMaybe "" subtype)
-      addAttribute span "slack.event.appId" (fromMaybe "" appId)
-      logUnknown
-    _ -> logUnknown
-  pure $ Object mempty
-  where
-    logUnknown = logDebug $ "unknown webhook callback: " <> tshow v
+      ev.channel.id
+      
+  -- If slacklinker was removed from a channel, remove the database entry
+  EventChannelLeft ev -> do
+    Entity wsId _ <- workspaceByTeamId teamId
+    runDB $ deleteBy $ UniqueJoinedChannel wsId ev.channel
+    
+  -- No-op events
+  EventMessageChanged -> pure ()
+  EventChannelJoinMessage -> pure ()
 
-    typeAndSubtypeAndAppId :: Value -> Parser (Text, Maybe Text, Maybe Text)
-    typeAndSubtypeAndAppId = withObject "webhook event" \val -> do
-      type_ <- val .: "type"
-      subtype <- val .:? "subtype"
-      appId <- val .:? "app_id"
-      pure (type_, subtype, appId)
+  -- Log unknown events
+  EventUnknown v -> logDebug $ "unknown webhook callback: " <> tshow v
+  where
+    handleMessage' :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> m ()
+    handleMessage' ev = do
+      blocklist <- getsApp (.config.blockedAppIds)
+      case (extractData ev).appId of
+        Just appId | appId `elem` blocklist -> pure ()
+        _ -> handleMessage ev teamId
 
 handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
   pure . toJSON $ UrlVerificationResponse {challenge}
 handleEvent (EventEventCallback EventCallback {event, teamId}) = do
   inSpan' (cs $ conNameOf event) defaultSpanArguments \span -> do
-    addAttribute span "slack.team.id" teamId.unTeamId
-    handleCallback event teamId span
+    addEventAttributes event teamId span
+    handleCallback event teamId
+    pure $ Object mempty
 handleEvent (EventUnknownWebhook v) = do
   logInfo $ "unknown webhook event: " <> tshow v
   pure $ Object mempty
