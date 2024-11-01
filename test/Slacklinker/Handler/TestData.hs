@@ -3,14 +3,14 @@ module Slacklinker.Handler.TestData where
 import Data.Aeson (Value(Object))
 import Data.Aeson qualified as A
 import Data.Aeson.KeyMap qualified as KM
+import Data.StringVariants (unsafeMkNonEmptyText)
 import Data.Vector qualified as V
 import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Types (TeamId (..), UserId (..))
-import Slacklinker.Import
-import Data.StringVariants (unsafeMkNonEmptyText)
 import Slacklinker.Handler.TestUtils ( urlRichText )
+import Slacklinker.Import
 
 emptyJsonObject :: Value
 emptyJsonObject = Object mempty
