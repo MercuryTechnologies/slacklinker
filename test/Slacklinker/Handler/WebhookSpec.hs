@@ -78,7 +78,7 @@ spec = do
       runAppM app $ do
         (wsId, teamId) <- createWorkspace
         let msg = forwardedMessageEvent
-            Just [MessageAttachment {fromUrl = Just url}] = msg.attachments
+            Just [MessageAttachment {decoded = Just DecodedMessageAttachment {fromUrl = Just url}}] = msg.attachments
             parts = fromJust $ splitSlackUrl url
 
         handleMessage msg teamId
@@ -99,7 +99,7 @@ spec = do
       runAppM app $ do
         (wsId, teamId) <- createWorkspace
         let msg = attachedUrlEvent
-            Just [MessageAttachment {messageBlocks = Just [attachmentMessageBlock]}] = msg.attachments
+            Just [MessageAttachment {decoded = Just DecodedMessageAttachment {messageBlocks = Just [attachmentMessageBlock]}}] = msg.attachments
             AttachmentMessageBlock {message = AttachmentMessageBlockMessage { blocks = [SlackBlockRichText rt]}} = attachmentMessageBlock
             Just url = richTextToMaybeUrl rt
             parts = fromJust $ splitSlackUrl url
@@ -113,6 +113,27 @@ spec = do
 
         liftIO $ do
           -- This should name the message that triggered slacklinker
+          theLink.joinedChannelId `shouldBe` channelId
+          theLink.messageTs `shouldBe` msg.ts
+          theLink.threadTs `shouldBe` Nothing
+          theLink.sent `shouldBe` False
+    it "can find URLs in undecodable attachments" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let msg = messageWithUndecodableAttachment
+            Just [MessageAttachment {decoded = decodedAttachments}] = msg.attachments
+        handleMessage msg teamId
+      
+        let expectedChannelId = ConversationId "C07KTH1T4CQ"
+            expectedMessageTs = "1730339894.629249"
+
+        (Just (Entity rtId _thread)) <- runDB $ getBy $ UniqueRepliedThread wsId expectedChannelId expectedMessageTs
+
+        [Entity _ theLink] <- runDB $ selectList [LinkedMessageRepliedThreadId ==. rtId] []
+        (Just (Entity channelId _)) <- runDB $ getBy $ UniqueJoinedChannel wsId msg.channel
+
+        liftIO $ do
+          isNothing decodedAttachments `shouldBe` True
           theLink.joinedChannelId `shouldBe` channelId
           theLink.messageTs `shouldBe` msg.ts
           theLink.threadTs `shouldBe` Nothing
