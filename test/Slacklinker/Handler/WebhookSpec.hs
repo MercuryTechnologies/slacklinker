@@ -118,6 +118,7 @@ spec = do
           theLink.threadTs `shouldBe` Nothing
           theLink.sent `shouldBe` False
     it "can find URLs in undecodable attachments" \app -> do
+      -- in this case, slacklinker will run the url detection parser on the raw json
       runAppM app $ do
         (wsId, teamId) <- createWorkspace
         let msg = messageWithUndecodableAttachment
@@ -133,6 +134,7 @@ spec = do
         (Just (Entity channelId _)) <- runDB $ getBy $ UniqueJoinedChannel wsId msg.channel
 
         liftIO $ do
+          -- we check that decoding failed (if this fails, the test has been setup incorrectly)
           isNothing decodedAttachments `shouldBe` True
           theLink.joinedChannelId `shouldBe` channelId
           theLink.messageTs `shouldBe` msg.ts

@@ -53,7 +53,7 @@ extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
     fromUrlLinks = maybeToList attachment.fromUrl
 
     blockLinks :: [Text]
-    blockLinks =  maybe [] (concatMap extractBlockLinksFromMessageBlock) attachment.messageBlocks
+    blockLinks = maybe [] (concatMap extractBlockLinksFromMessageBlock) attachment.messageBlocks
 
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [Text]
     extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
@@ -139,7 +139,6 @@ workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (
 
 handleMessage :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> TeamId -> m ()
 handleMessage msg teamId = do
-  -- workspace <- workspaceByTeamId teamId
   workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
