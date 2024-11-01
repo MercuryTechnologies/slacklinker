@@ -17,7 +17,7 @@ import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Span, addAttribute, addAttributes, ToAttribute (toAttribute), Attribute)
 import Slacklinker.App
-import Slacklinker.Exceptions (UnknownWorkspace(UnknownWorkspace), VerificationException(VerificationException))
+import Slacklinker.Exceptions
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
 import Slacklinker.Models
