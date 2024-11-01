@@ -315,7 +315,6 @@ handleEvent (EventUnknownWebhook v) = do
 
 postSlackInteractiveWebhookR :: SlackSignature -> SlackRequestTimestamp -> ByteString -> AppM Value
 postSlackInteractiveWebhookR sig ts body = do
-  logDebug $ "hello"
   secret <- getsApp (.config.slackSigningSecret)
   ePayload <- validateRequest secret sig ts body
   case ePayload of
