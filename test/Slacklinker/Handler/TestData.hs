@@ -1,19 +1,19 @@
 module Slacklinker.Handler.TestData where
 
+import Data.Aeson (Value(Object))
+import Data.Aeson qualified as A
+import Data.Aeson.KeyMap qualified as KM
+import Data.Vector qualified as V
 import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Types (TeamId (..), UserId (..))
 import Slacklinker.Import
 import Data.StringVariants (unsafeMkNonEmptyText)
-import Slacklinker.Handler.TestUtils
-import Data.Aeson (Value(Object))
-import Data.Aeson qualified as A
-import Data.Aeson.KeyMap qualified as KM
-import Data.Vector qualified as V
+import Slacklinker.Handler.TestUtils ( urlRichText )
 
 emptyJsonObject :: Value
-emptyJsonObject = Object KM.empty
+emptyJsonObject = Object mempty
 
 ts1 :: Text
 ts1 = "1663971111.111111"
@@ -166,11 +166,11 @@ messageWithUndecodableAttachment =
                 , attachments = Just
                     [ MessageAttachment
                         { decoded = Nothing
-                        , raw = A.Object
+                        , raw = Object
                             ( KM.fromList
                                 [
                                     ( "actions"
-                                    , A.Array $ V.fromList [ A.Object
+                                    , A.Array $ V.fromList [ Object
                                             ( KM.fromList
                                                 [
                                                     ( "id"
