@@ -140,9 +140,9 @@ draftMessage workspace links =
   let linksText = mapMaybe toLink links
    in makeMessage linksText
   where
-    makeUrl :: Maybe KnownUser -> Maybe Text -> Text -> SlackUrlParts -> Maybe Text
-    makeUrl mUser mChannelName slackSubdomain urlParts = do
-      url <- buildSlackUrl slackSubdomain urlParts
+    makeUrl :: Maybe KnownUser -> Maybe Text -> SlackUrlParts -> Maybe Text
+    makeUrl mUser mChannelName urlParts = do
+      url <- buildSlackUrl urlParts
       let mEmoji = mUser >>= (.emoji) <&> unEmoji
       pure $ case mChannelName of
         Just channelName -> case mEmoji of
@@ -167,8 +167,7 @@ draftMessage workspace links =
       makeUrl
         mUser
         joinedChannel.name
-        workspace.slackSubdomain
-        SlackUrlParts {messageTs, channelId = joinedChannel.channelId, threadTs}
+        SlackUrlParts {workspaceName = workspace.slackSubdomain, messageTs, channelId = joinedChannel.channelId, threadTs}
 
     makeMessage :: [Text] -> Text
     makeMessage linksToInclude =

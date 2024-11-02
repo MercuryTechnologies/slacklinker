@@ -4,6 +4,7 @@ synopsis: Slack backlink bot
 dependencies:
   - adjunctions
   - aeson
+  - attoparsec
   - base >= 4.9 && <5
   - base16-bytestring
   - base64-bytestring
@@ -28,7 +29,6 @@ dependencies:
   - http-client-tls
   - http-media
   - http-types
-  - megaparsec
   - monad-logger
   - mono-traversable
   - network-uri

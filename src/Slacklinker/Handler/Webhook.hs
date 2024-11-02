@@ -30,7 +30,7 @@ import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackS
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 import Slacklinker.Extract.Types
-import Slacklinker.Extract.Parse (extractRawLinks)
+import Slacklinker.Extract.FreeText (extractLinksFromJson)
 import Data.List (nub)
 
 extractBlockLinks :: SlackBlock -> [Text]
@@ -139,14 +139,14 @@ workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (
 
 handleMessage :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> TeamId -> m ()
 handleMessage msg teamId = do
-  workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
+  workspaceE@(Entity _ workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
       let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
           attachedLinks = mconcat $ extractAttachedLinks <$> mapMaybe decoded (fromMaybe [] ev.attachments)
-          rawLinks = mconcat $ extractRawLinks workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
+          rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
           links = nub $ blockLinks <> attachedLinks <> rawLinks
-      repliedThreadIds <- mapMaybeM (handleUrl workspaceId) links
+      repliedThreadIds <- mapMaybeM (handleUrl workspaceE) links
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
       forM_ repliedThreadIds $ \todo -> do
@@ -158,10 +158,11 @@ handleMessage msg teamId = do
       pure ()
   where
     ev = extractData msg
-    handleUrl workspaceId url = do
+    handleUrl (Entity workspaceId workspace) url = do
       let linkSource =
             SlackUrlParts
-              { channelId = ev.channel
+              { workspaceName = workspace.slackSubdomain
+              , channelId = ev.channel
               , messageTs = ev.ts
               , threadTs = ev.threadTs
               }
