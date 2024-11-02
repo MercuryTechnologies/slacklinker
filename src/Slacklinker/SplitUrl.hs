@@ -1,5 +1,6 @@
 module Slacklinker.SplitUrl where
 
+import Data.Char (isDigit)
 import Data.List qualified as List
 import Data.Text qualified as T
 import Slacklinker.Import
@@ -23,14 +24,15 @@ Slack message URLs are constructed of three parts:
    the message is directly in a channel.
 -}
 data SlackUrlParts = SlackUrlParts
-  { channelId :: ConversationId
+  { workspaceName :: Text
+  , channelId :: ConversationId
   , messageTs :: Text
   , threadTs :: Maybe Text
   }
   deriving stock (Show)
 
-buildSlackUrl :: Text -> SlackUrlParts -> Maybe Text
-buildSlackUrl workspaceName SlackUrlParts {..} = do
+buildSlackUrl :: SlackUrlParts -> Maybe Text
+buildSlackUrl SlackUrlParts {..} = do
   messageTsP <- messageTsToP messageTs
   pure $ "https://" <> workspaceName <> ".slack.com/archives/" <> channelId.unConversationId <> "/" <> messageTsP <> threadTsPart
   where
@@ -40,6 +42,9 @@ buildSlackUrl workspaceName SlackUrlParts {..} = do
 
 isSlack :: Host -> Bool
 isSlack (Host host) = "slack.com" `isSuffixOf` host
+
+getSlackSubdomain :: Host -> Maybe Text
+getSlackSubdomain (Host host) = stripSuffix ".slack.com" (decodeUtf8 host)
 
 {- | Splits a Slack URL into bits
 
@@ -51,16 +56,48 @@ Just (SlackUrlParts {channelId = ConversationId {unConversationId = "C043YJGBY49
 -}
 splitSlackUrl :: Text -> Maybe SlackUrlParts
 splitSlackUrl url = do
-  Right (URI {uriPath, uriAuthority, uriQuery = Query {queryPairs}}) <- pure $ parseURI strictURIParserOptions (cs url)
+  Right uri <- pure $ parseURI strictURIParserOptions (cs url)
+  getUriSlackParts uri
+
+getUriSlackParts :: URI -> Maybe SlackUrlParts
+getUriSlackParts (URI {uriPath, uriAuthority, uriQuery = Query {queryPairs}}) = do
   host <- authorityHost <$> uriAuthority
-  guard $ isSlack host
+  let mSubdomain = getSlackSubdomain host
+      uriPathTrimmed = trimEndings $ cs uriPath
+  case mSubdomain of
+    Nothing -> Nothing
+    Just workspaceName -> do 
+      [_slash, "archives", channelId_, messageTs_] <- pure $ T.split (== '/') (cs uriPathTrimmed)
+      let messageTs = pToMessageTs messageTs_
+          threadTs = trimEndings . cs <$> List.lookup "thread_ts" queryPairs
+          channelId = ConversationId channelId_
+      guard $ validateTs messageTs
+      guard $ maybe True validateTs threadTs
+      Just SlackUrlParts {..}
 
-  [_slash, "archives", channelId_, messageTs_] <- pure $ T.split (== '/') (cs uriPath)
-  let messageTs = pToMessageTs messageTs_
-  let threadTs = cs <$> List.lookup "thread_ts" queryPairs
-  let channelId = ConversationId channelId_
+-- | Validates a Slack timestamp (ts)
+-- A valid ts must be either:
+-- 1. Exactly 10 digits, followed by a dot, followed by 6 digits
+-- 2. A 'p' followed by exactly 16 digits
+validateTs :: Text -> Bool
+validateTs ts
+    | T.null ts = False
+    | T.head ts == 'p' = T.length rest == 16 && T.all isDigit rest
+    | T.length before /= 10 = False
+    | T.length after /= 7 = False -- .123456 is 7 characters
+    | not (T.all isDigit before) = False
+    | not (T.all isDigit (T.tail after)) = False -- skip the dot
+    | otherwise = True
+  where
+    rest = T.tail ts
+    (before, after) = T.breakOn "." ts
 
-  pure SlackUrlParts {..}
+-- it would be reasonable to write in github
+-- > i am writing this pr to fix a nasty bug (https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519) that occured in prod
+-- turns out that () are valid characters in URLs, but for this super common use case we will strip them from the end of paths
+-- same for other common ending punctuation ,;!. 
+trimEndings :: Text -> Text
+trimEndings = T.dropWhileEnd (`T.elem` "),;!.")
 
 {- | Turns a ts into the pxxxx argument you see in URLs
 
