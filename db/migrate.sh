@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -eu
 
 DB_DIR="$(dirname $0)"
 

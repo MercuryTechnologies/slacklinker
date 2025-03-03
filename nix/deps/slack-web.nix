@@ -1,6 +1,6 @@
 { mkDerivation, aeson, aeson-pretty, base, base16-bytestring
 , bytestring, classy-prelude, containers, crypton
-, data-default-class, deepseq, either, errors, fakepull, fetchgit
+, data-default-class, deepseq, either, errors, fakepull
 , generic-arbitrary, hashable, hspec, hspec-core, hspec-discover
 , hspec-golden, http-api-data, http-client, http-client-tls, lib
 , megaparsec, mono-traversable, mtl, pretty-simple, QuickCheck
@@ -11,13 +11,8 @@
 }:
 mkDerivation {
   pname = "slack-web";
-  version = "2.0.0.4";
-  src = fetchgit {
-    url = "https://github.com/MercuryTechnologies/slack-web";
-    sha256 = "sha256-sMmlGMzbj8xy+joqN/Ohok1Q+B3pZDUFCMnqu5xi+a8=";
-    rev = "649186a790a79547ecd16836af5789c93a195a95";
-    fetchSubmodules = true;
-  };
+  version = "2.1.0.0";
+  sha256 = "8606da0f7b0e0c373eb219a3fe4bc3cc82e61a1e8999df55f041ae41d6a036d0";
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [

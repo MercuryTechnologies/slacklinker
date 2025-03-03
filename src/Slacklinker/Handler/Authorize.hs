@@ -27,6 +27,8 @@ desiredScopes =
       "channels:read"
     , -- send messages
       "chat:write"
+    , -- send reactions to messages
+      "reactions:write"
     , -- read the team URL
       "team:read"
     , -- take commands via IM

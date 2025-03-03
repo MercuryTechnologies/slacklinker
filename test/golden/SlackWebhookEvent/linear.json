@@ -1,0 +1,218 @@
+{
+  "token": "aaaa",
+  "team_id": "T043DB835ML",
+  "context_team_id": "T043DB835ML",
+  "context_enterprise_id": null,
+  "api_app_id": "A0442TUPHGR",
+  "event": {
+    "user": "U08G25UNKUM",
+    "type": "message",
+    "ts": "1741119999.969239",
+    "bot_id": "B08G25UNKSR",
+    "app_id": "AEMQ3Q4F4",
+    "text": "",
+    "team": "T043DB835ML",
+    "bot_profile": {
+      "id": "B08G25UNKSR",
+      "deleted": false,
+      "name": "Linear",
+      "updated": 1741119901,
+      "app_id": "AEMQ3Q4F4",
+      "icons": {
+        "image_36": "https://avatars.slack-edge.com/2024-04-02/6911035809185_034fc1c29382232dd925_36.png",
+        "image_48": "https://avatars.slack-edge.com/2024-04-02/6911035809185_034fc1c29382232dd925_48.png",
+        "image_72": "https://avatars.slack-edge.com/2024-04-02/6911035809185_034fc1c29382232dd925_72.png"
+      },
+      "team_id": "T043DB835ML"
+    },
+    "thread_ts": "1741119997.755089",
+    "parent_user_id": "U043H11ES4V",
+    "attachments": [
+      {
+        "id": 1,
+        "blocks": [
+          {
+            "type": "section",
+            "block_id": "DxfDk",
+            "text": {
+              "type": "mrkdwn",
+              "text": "<https://linear.app/mercury-integration-testing/issue/MER-1/welcome-to-linear|MER-1 Welcome to Linear :wave:>",
+              "verbatim": true
+            }
+          },
+          {
+            "type": "context",
+            "block_id": "Hx9gA",
+            "elements": [
+              {
+                "type": "mrkdwn",
+                "text": "*State*  Todo",
+                "verbatim": false
+              },
+              {
+                "type": "mrkdwn",
+                "text": "*Priority*  High",
+                "verbatim": false
+              }
+            ]
+          },
+          {
+            "type": "context",
+            "block_id": "9asyw",
+            "elements": [
+              {
+                "type": "mrkdwn",
+                "text": "<https://linear.app/team/MER|Mercury-integration-testing> | <!date^1740095604^{date_short_pretty}|February 20, 2025>",
+                "verbatim": false
+              }
+            ]
+          },
+          {
+            "type": "actions",
+            "block_id": "PmbwK",
+            "elements": [
+              {
+                "type": "button",
+                "action_id": "subscribeIssue",
+                "text": {
+                  "type": "plain_text",
+                  "text": "Subscribe",
+                  "emoji": true
+                },
+                "value": "101f26dc-13ea-4bf7-a9d7-8fc33725ea8c"
+              },
+              {
+                "type": "static_select",
+                "action_id": "changeStatus.101f26dc-13ea-4bf7-a9d7-8fc33725ea8c",
+                "placeholder": {
+                  "type": "plain_text",
+                  "text": "Change status",
+                  "emoji": true
+                },
+                "initial_option": {
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Todo",
+                    "emoji": true
+                  },
+                  "value": "46ee5b48-f343-4d49-a4b5-fa966efc104e"
+                },
+                "options": [
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Backlog",
+                      "emoji": true
+                    },
+                    "value": "b2204336-c230-4940-ba1d-561150918c32"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Todo",
+                      "emoji": true
+                    },
+                    "value": "46ee5b48-f343-4d49-a4b5-fa966efc104e"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "In Progress",
+                      "emoji": true
+                    },
+                    "value": "b0f86cde-97cc-4e0d-ad3c-6d80cc73bb34"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Done",
+                      "emoji": true
+                    },
+                    "value": "41d0934e-723b-4b4c-be9a-6191ea68b0da"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Canceled",
+                      "emoji": true
+                    },
+                    "value": "a6460ae4-11de-4f18-adb2-6d8ca5a13364"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Duplicate",
+                      "emoji": true
+                    },
+                    "value": "45cea4c6-3fbc-4088-b237-e8923be9a3b4"
+                  }
+                ]
+              },
+              {
+                "type": "overflow",
+                "action_id": "moreActions.101f26dc-13ea-4bf7-a9d7-8fc33725ea8c",
+                "options": [
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Comment",
+                      "emoji": true
+                    },
+                    "value": "newComment"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Assign to me",
+                      "emoji": true
+                    },
+                    "value": "assignIssueToMe"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Unsubscribe",
+                      "emoji": true
+                    },
+                    "value": "unsubscribeIssue"
+                  },
+                  {
+                    "text": {
+                      "type": "plain_text",
+                      "text": "Sync thread...",
+                      "emoji": true
+                    },
+                    "value": "syncThreadAfterCreation"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "color": "#2d1c9c",
+        "fallback": "MER-1 Welcome to Linear 👋"
+      }
+    ],
+    "metadata": {
+      "event_type": "ignoreMessage",
+      "event_payload": {}
+    },
+    "channel": "C043YJGBY49",
+    "event_ts": "1741119999.969239",
+    "channel_type": "channel"
+  },
+  "type": "event_callback",
+  "event_id": "Ev08G5Q525KM",
+  "event_time": 1741119999,
+  "authorizations": [
+    {
+      "enterprise_id": null,
+      "team_id": "T043DB835ML",
+      "user_id": "U0442US8QGH",
+      "is_bot": true,
+      "is_enterprise_install": false
+    }
+  ],
+  "is_ext_shared_channel": false,
+  "event_context": "aaaa"
+}

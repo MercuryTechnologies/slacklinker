@@ -1,0 +1,8 @@
+# Get workspace info for a token
+query WorkspaceInfo {
+  organization {
+    urlKey
+    name
+    id
+  }
+}

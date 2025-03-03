@@ -22,7 +22,10 @@ import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
+import Slacklinker.Linear.Sender (doBacklinkLinearTickets)
+import Slacklinker.Linear.Teams (updateLinearTeamsCache)
 import Slacklinker.Models
+import Slacklinker.Sender.AppHome
 import Slacklinker.Sender.Internal
 import Slacklinker.Sender.Types
 import Slacklinker.Sender.UserDataUpload
@@ -239,6 +242,13 @@ handleTodo r =
           doUpdateReply replyId
         ReqUploadUserData wsInfo cid files -> do
           doUploadUserData wsInfo cid files
+        UpdateAppHome wsInfo user -> do
+          doUpdateUser'sAppHome wsInfo user
+        ReqUpdateLinearTeams wsInfo cid -> do
+          updateLinearTeamsCache wsInfo.workspaceId
+          doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent = "Done!", workspaceMeta = wsInfo}
+        BacklinkPlausibleLinearTickets wsInfo sup jcid kuid tickets ->
+          doBacklinkLinearTickets wsInfo sup jcid kuid tickets
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId

@@ -23,6 +23,7 @@ import Slacklinker.Extract.FreeText (extractLinksFromJson)
 import Slacklinker.Extract.Types
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
+import Slacklinker.Linear.Webhook (handleLinearChannelMessage)
 import Slacklinker.Models
 import Slacklinker.Sender
 import Slacklinker.SplitUrl
@@ -70,10 +71,11 @@ recordLink ::
   (HasApp m, MonadIO m) =>
   WorkspaceId ->
   KnownUserId ->
+  JoinedChannelId ->
   SlackUrlParts ->
   SlackUrlParts ->
   m (Maybe RepliedThreadId)
-recordLink workspaceId userId linkSource linkDestination = do
+recordLink workspaceId userId joinedChannelId linkSource linkDestination = do
   if isInSameThread linkSource linkDestination
     then pure Nothing
     else do
@@ -95,11 +97,6 @@ recordLink workspaceId userId linkSource linkDestination = do
                     linkDestination.threadTs
               }
         let repliedThreadId = either entityKey identity repliedThreadId_
-
-        joinedChannelId_ <-
-          insertBy
-            JoinedChannel {workspaceId, name = Nothing, channelId = linkSource.channelId}
-        let joinedChannelId = either entityKey identity joinedChannelId_
 
         -- We ignore unique violations here on purpose: if it's already been noted,
         -- we don't care.
@@ -142,18 +139,32 @@ workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (
 
 handleMessage :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> TeamId -> m ()
 handleMessage msg teamId = do
-  workspaceE@(Entity _ workspace) <- workspaceByTeamId teamId
+  workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
       let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
           attachedLinks = mconcat $ extractAttachedLinks <$> mapMaybe decoded (fromMaybe [] ev.attachments)
           rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
           links = nub $ blockLinks <> attachedLinks <> rawLinks
-      repliedThreadIds <- mapMaybeM (handleUrl workspaceE) links
+
+      -- FIXME(evanr): The only IO these `record*` functions perform
+      -- currently is database inserts, so I think they can/should be run in
+      -- the same transaction.
+      kuid <- recordUser workspaceId ev.user
+      jcid_ <-
+        runDB
+          $ insertBy
+            JoinedChannel {workspaceId, name = Nothing, channelId = ev.channel}
+      let jcid = either entityKey identity jcid_
+
+      repliedThreadIds <- mapMaybeM (handleUrl workspaceE kuid jcid) links
+
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
       forM_ repliedThreadIds $ \todo -> do
         for_ todo $ senderEnqueue . UpdateReply
+
+      handleLinearChannelMessage workspaceE kuid jcid ev
     Im -> do
       handleImCommand (workspaceMetaFromWorkspaceE workspaceE) ev.channel ev.text ev.files
     Group ->
@@ -161,20 +172,11 @@ handleMessage msg teamId = do
       pure ()
   where
     ev = extractData msg
-    handleUrl (Entity workspaceId workspace) url = do
-      let linkSource =
-            SlackUrlParts
-              { workspaceName = workspace.slackSubdomain
-              , channelId = ev.channel
-              , messageTs = ev.ts
-              , threadTs = ev.threadTs
-              }
+    handleUrl (Entity workspaceId workspace) kuid jcid url = do
+      let linkSource = extractableMessageToSlackUrlParts workspace.slackSubdomain ev
+
       for (splitSlackUrl url) \linkDestination -> do
-        -- FIXME(evanr): The only IO these `record*` functions perform
-        -- currently is database inserts, so I think they can/should be run in
-        -- the same transaction.
-        userId <- recordUser workspaceId ev.user
-        recordLink workspaceId userId linkSource linkDestination
+        recordLink workspaceId kuid jcid linkSource linkDestination
 
 addEventAttributes :: Event -> TeamId -> Span -> AppM ()
 addEventAttributes event teamId span = do
@@ -210,6 +212,10 @@ addEventAttributes event teamId span = do
       addAttribute span "slack.event.type" ("channel_left" :: Text)
       addAttribute span "slack.channel.id" ev.channel.unConversationId
       addAttribute span "slack.channel.actor.id" ev.actorId.unUserId
+    EventAppHomeOpened ev -> do
+      addAttribute span "slack.event.type" ("app_home_opened" :: Text)
+      addAttribute span "slack.event.user.id" ev.user.unUserId
+      addAttribute span "slack.conversation.id" ev.channel.unConversationId
     EventUnknown v -> case parse unknownAttributes v of
       Success attrs -> for_ attrs \(attrName, attrVal) -> addAttribute span ("slack.event." <> attrName) attrVal
       _ -> pure ()
@@ -276,20 +282,18 @@ handleCallback event teamId = case event of
   EventBotMessage ev -> handleMessage' ev
   -- Join newly created channels
   EventChannelCreated ev -> do
-    Entity workspaceId workspace <- workspaceByTeamId teamId
-    senderEnqueue
-      $ JoinChannel
-        WorkspaceMeta
-          { slackTeamId = workspace.slackTeamId
-          , token = workspace.slackOauthToken
-          , workspaceId
-          }
-        ev.channel.id
+    wsMeta <- workspaceMetaFromWorkspaceE <$> workspaceByTeamId teamId
+    senderEnqueue $ JoinChannel wsMeta ev.channel.id
 
   -- If slacklinker was removed from a channel, remove the database entry
   EventChannelLeft ev -> do
     Entity wsId _ <- workspaceByTeamId teamId
     runDB $ deleteBy $ UniqueJoinedChannel wsId ev.channel
+
+  -- App Home page was opened: need to update the user's view
+  EventAppHomeOpened ev -> do
+    wsMeta <- workspaceMetaFromWorkspaceE <$> workspaceByTeamId teamId
+    senderEnqueue $ UpdateAppHome wsMeta ev.user
 
   -- No-op events
   EventMessageChanged -> pure ()

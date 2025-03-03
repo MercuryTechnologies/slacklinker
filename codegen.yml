@@ -1,0 +1,10 @@
+# GraphQL code generation for Linear.
+# https://github.com/brandonchinn178/graphql-client#readme
+# If you want to regenerate this code, use graphql-codegen from the nix shell.
+schema: https://api.linear.app/graphql
+documents: src/Slacklinker/Linear/GraphQL/*.graphql
+
+hsSourceDir: src/
+apiModule: Slacklinker.Linear.GraphQL.API
+enumsModule: Slacklinker.Linear.GraphQL.Enums
+scalarsModule: Slacklinker.Linear.GraphQL.Scalars

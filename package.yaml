@@ -10,7 +10,10 @@ dependencies:
   - base64-bytestring
   - bytestring
   - classy-prelude
+  - containers
   - cryptonite
+  - crypton-connection
+  - crypton-x509-system
   - data-default-class
   - directory
   - either
@@ -18,6 +21,8 @@ dependencies:
   - exceptions
   - extra
   - generic-deriving
+  - graphql-client
+  - hoauth2
   - hs-opentelemetry-api
   - hs-opentelemetry-exporter-otlp
   - hs-opentelemetry-instrumentation-http-client
@@ -47,13 +52,15 @@ dependencies:
   - servant-client
   - servant-client-core
   - servant-server
-  - slack-web
+  - slack-web >= 2.1.0.0
   - stm
   - string-conversions
+  - string-variants
   - template-haskell
   - text
   - th-abstraction
   - time
+  - tls
   - transformers
   - typed-process
   - unliftio

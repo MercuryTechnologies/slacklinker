@@ -132,3 +132,123 @@ Setting sql=settings
   content (JSONB Value)
   createdAt UTCTime MigrationOnly
   updatedAt UTCTime MigrationOnly
+
+-- | \"state\" parameters we have given to Linear. These are used as anti-CSRF
+-- and authentication: they are bound to the workspace ID in question and only
+-- handed out via authenticated Slack sessions.
+LinearNonce sql=linear_nonces
+  Id UUID default=uuid_generate_v1mc()
+  -- | Value, totally random bytes
+  nonceValue ByteString
+  -- | Slack workspace it is associated with
+  workspaceId WorkspaceId
+  UniqueLinearNonceValue nonceValue sql=linear_nonces_nonce_value_key
+  -- | When it can be deleted (we delete these after 10 minutes)
+  expiresAt UTCTime
+
+-- | A Linear workspace as bound to one Slacklinker Slack workspace
+LinearOrganization sql=linear_organizations
+  Id UUID default=uuid_generate_v1mc()
+  -- | Slacklinker Slack workspace ID
+  workspaceId WorkspaceId
+  -- | Linear's ID for this organization. In practice this is a UUID.
+  linearId Text
+  -- | The URL key for the organization on Linear, e.g. @mercury@ in https://linear.app/mercury.
+  urlKey Text
+  -- | Display name for the organization
+  displayName Text
+
+  -- | Only one binding per Linear Workspace-Slacklinker Workspace combo.
+  UniqueLinearOrganization workspaceId linearId sql=unique_linear_organization
+  -- | We don't currently want to deal with multiple Linear workspaces per
+  -- Slacklinker tenant, so prevent it happening at the DB level.
+  UniqueOneLinearOrganizationPerTenant workspaceId sql=unique_one_linear_organization_per_tenant
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | Authentication session with the Linear API as an app.
+--
+-- These may be replaced without invalidating the binding.
+LinearAPIAuthSession sql=linear_api_auth_sessions
+  Id UUID default=uuid_generate_v1mc()
+  -- | Slacklinker Linear workspace binding
+  linearOrganizationId LinearOrganizationId
+  -- | Linear bearer token
+  token LinearBearerToken
+  -- | When the token expires.
+  -- FIXME(jadel): hm, these have no real refresh flow. But they also expire in
+  -- 10 years as of this writing (2025-03-03). Shrug!
+  expiresAt UTCTime Maybe
+  -- FIXME(jadel): keep track of which scopes are on the token in question
+  -- Made harder by hoauth2 API design: https://github.com/freizl/hoauth2/issues/253
+
+  UniqueLinearAPIAuthSession linearOrganizationId sql=unique_linear_auth_session
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | Team in Linear, which is used to recognize non-link ticket references in
+-- text from things that are not Linear ticket references, without having to
+-- actually ask Linear if every ticket-id looking thing in a Slack message is
+-- real.
+--
+-- This is as opposed to a Linear workspace (which currently we do not represent).
+LinearTeam sql=linear_teams
+  Id UUID default=uuid_generate_v1mc()
+  -- | Linear workspace this belongs to. Transitively gives the Slacklinker
+  -- workspace.
+  linearOrganizationId LinearOrganizationId
+  -- | The FOO part of FOO-123 issue IDs.
+  urlKey Text
+
+  UniqueLinearTeamUrlKey linearOrganizationId urlKey sql=unique_linear_team_url_key
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | An individual instance of a Linear ticket being linked from Slack. This is
+-- similar to LinkedMessage: like LinkedMessage, it records one for each
+-- mention of a ticket with its source. There may be multiple
+-- LinkedLinearTicket entries per message.
+--
+-- The difference between this and a LinkedMessage is that this one is only
+-- created by the queued job (since we don't know the ticket UUID till we ask
+-- the Linear API, and we do not call APIs from webhooks as a matter of
+-- performance).
+--
+-- The main purpose of storing this data is for diagnostics, realistically; we
+-- just kind of fire away with respect to adding link attachments to the
+-- tickets.
+LinkedLinearTicket sql=linked_linear_tickets
+  Id UUID default=uuid_generate_v1mc()
+  -- | Linear workspace binding this ticket is attached to
+  linearOrganizationId LinearOrganizationId
+
+  -- | Linear-side ticket ID. This requires fetching from the Linear API, so is
+  -- not done inside a webhook handler.
+  --
+  -- This is, in practice, a UUID
+  linearTicketId Text
+
+  -- | Channel that the ticket was linked from.
+  joinedChannelId JoinedChannelId
+
+  -- | User who sent the message linking the ticket.
+  knownUserId KnownUserId
+
+  -- | Slack URL parts: message ts
+  messageTs Text
+
+  -- | Slack URL parts: enclosing thread
+  threadTs Text Maybe
+
+  -- | NOTE: this index is cursed: (tid, ticket, cid, messageTs, NULL) can appear
+  -- multiple times, which Persistent warns hard on, so we use @!force@.
+  -- Because of this fun SQL behaviour, we have an extra unique index
+  -- @unique_linked_linear_ticket_null@ to deal with NULL as a real value; see
+  -- the migration file.
+  UniqueLinkedLinearTicket linearOrganizationId linearTicketId joinedChannelId messageTs threadTs sql=unique_linked_linear_ticket !force
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
