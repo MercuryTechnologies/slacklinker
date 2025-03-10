@@ -10,8 +10,8 @@ import Test.Hspec.Runner (defaultConfig, hspecWith)
 main :: IO ()
 main = do
   putStrLn "Begin tests"
-  withGlobalTracing $
-    inSpan "Run tests" defaultSpanArguments runTests
+  withGlobalTracing
+    $ inSpan "Run tests" defaultSpanArguments runTests
 
 runTests :: IO ()
 runTests = do

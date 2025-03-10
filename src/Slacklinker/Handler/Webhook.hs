@@ -10,14 +10,17 @@
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage) where
 
 import Control.Monad.Extra (mapMaybeM)
-import Data.Aeson (Result (..), Value (Object), (.:), (.:?), decodeStrict)
+import Data.Aeson (Result (..), Value (Object), decodeStrict, (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Data.HashMap.Strict qualified as HashMap
+import Data.List (nub)
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
-import OpenTelemetry.Trace.Core (Span, addAttribute, addAttributes, ToAttribute (toAttribute), Attribute)
+import OpenTelemetry.Trace.Core (Attribute, Span, ToAttribute (toAttribute), addAttribute, addAttributes)
 import Slacklinker.App
 import Slacklinker.Exceptions
+import Slacklinker.Extract.FreeText (extractLinksFromJson)
+import Slacklinker.Extract.Types
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
 import Slacklinker.Models
@@ -29,9 +32,6 @@ import Web.Slack.Experimental.Events.Types
 import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackSignature, SlackVerificationFailed (..), validateRequest)
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
-import Slacklinker.Extract.Types
-import Slacklinker.Extract.FreeText (extractLinksFromJson)
-import Data.List (nub)
 
 extractBlockLinks :: SlackBlock -> [Text]
 extractBlockLinks = fromBlock
@@ -103,8 +103,8 @@ recordLink workspaceId userId linkSource linkDestination = do
 
         -- We ignore unique violations here on purpose: if it's already been noted,
         -- we don't care.
-        void $
-          insertBy
+        void
+          $ insertBy
             LinkedMessage
               { repliedThreadId
               , -- The message event is the source of the link
@@ -118,13 +118,16 @@ recordLink workspaceId userId linkSource linkDestination = do
   where
     isJustAndEqual a b = fromMaybe False (liftM2 (==) a b)
     isInSameThread link1 link2 =
-      link1.channelId == link2.channelId
+      link1.channelId
+        == link2.channelId
         && (
              -- link2 is the thread parent of link1
-             link1.threadTs == Just link2.messageTs
+             link1.threadTs
+              == Just link2.messageTs
               ||
               -- link1 is the thread parent of link2
-              link2.threadTs == Just link1.messageTs
+              link2.threadTs
+              == Just link1.messageTs
               -- both are children of the same thread
               || (link1.threadTs `isJustAndEqual` link2.threadTs)
            )
@@ -208,8 +211,8 @@ addEventAttributes event teamId span = do
       addAttribute span "slack.channel.id" ev.channel.unConversationId
       addAttribute span "slack.channel.actor.id" ev.actorId.unUserId
     EventUnknown v -> case parse unknownAttributes v of
-        Success attrs -> for_ attrs \(attrName, attrVal) -> addAttribute span ("slack.event." <> attrName) attrVal
-        _ -> pure ()
+      Success attrs -> for_ attrs \(attrName, attrVal) -> addAttribute span ("slack.event." <> attrName) attrVal
+      _ -> pure ()
 
   pure ()
   where
@@ -224,8 +227,8 @@ addEventAttributes event teamId span = do
           addAttribute s "slack.event.attachments.hasNoMessageBlocks" $ any hasNoMessageBlocks attachments
           addAttribute s "slack.event.attachments.hasUndecodable" $ any hasUndecodable attachments
       pure ()
-    
-    hasMsgUnfurl  :: MessageAttachment -> Bool
+
+    hasMsgUnfurl :: MessageAttachment -> Bool
     hasMsgUnfurl = fromMaybe False . (decoded >=> isMsgUnfurl)
 
     -- decoded >=> (pure . isNothing . messageBlocks) - if decoding succeeds, checks if its messageBlocks field is Nothing
@@ -251,46 +254,46 @@ addEventAttributes event teamId span = do
       ts <- val .:? "ts" :: Parser (Maybe Text)
       team <- val .:? "team" :: Parser (Maybe Text)
       attachments <- val .:? "attachments" :: Parser (Maybe [Value])
-      pure $ filterMaybes
-        [ ("type", Just $ toAttribute type_)
-        , ("subtype", toAttribute <$> subtype)
-        , ("appId", toAttribute <$> appId)
-        , ("botId", toAttribute <$> botId)
-        , ("userId", toAttribute <$> userId)
-        , ("channelId", toAttribute <$> channelId)
-        , ("ts", toAttribute <$> ts)
-        , ("team", toAttribute <$> team)
-        , ("hasAttachments", Just . toAttribute . maybe False (not . null) $ attachments)
-        , ("numAttachments", Just . toAttribute . maybe 0 length $ attachments)
-        ]
+      pure
+        $ filterMaybes
+          [ ("type", Just $ toAttribute type_)
+          , ("subtype", toAttribute <$> subtype)
+          , ("appId", toAttribute <$> appId)
+          , ("botId", toAttribute <$> botId)
+          , ("userId", toAttribute <$> userId)
+          , ("channelId", toAttribute <$> channelId)
+          , ("ts", toAttribute <$> ts)
+          , ("team", toAttribute <$> team)
+          , ("hasAttachments", Just . toAttribute . maybe False (not . null) $ attachments)
+          , ("numAttachments", Just . toAttribute . maybe 0 length $ attachments)
+          ]
 
 handleCallback :: Event -> TeamId -> AppM ()
 handleCallback event teamId = case event of
-  -- Handle both regular and bot messages uniformly. 
+  -- Handle both regular and bot messages uniformly.
   -- Some regular messages may actually be bot messages, maybe legacy bots.
-  EventMessage ev -> handleMessage' ev 
+  EventMessage ev -> handleMessage' ev
   EventBotMessage ev -> handleMessage' ev
-  
   -- Join newly created channels
   EventChannelCreated ev -> do
     Entity workspaceId workspace <- workspaceByTeamId teamId
-    senderEnqueue $ JoinChannel 
-      WorkspaceMeta
-        { slackTeamId = workspace.slackTeamId
-        , token = workspace.slackOauthToken
-        , workspaceId
-        }
-      ev.channel.id
-      
+    senderEnqueue
+      $ JoinChannel
+        WorkspaceMeta
+          { slackTeamId = workspace.slackTeamId
+          , token = workspace.slackOauthToken
+          , workspaceId
+          }
+        ev.channel.id
+
   -- If slacklinker was removed from a channel, remove the database entry
   EventChannelLeft ev -> do
     Entity wsId _ <- workspaceByTeamId teamId
     runDB $ deleteBy $ UniqueJoinedChannel wsId ev.channel
-    
+
   -- No-op events
   EventMessageChanged -> pure ()
   EventChannelJoinMessage -> pure ()
-
   -- Log unknown events
   EventUnknown v -> logDebug $ "unknown webhook callback: " <> tshow v
   where
@@ -329,7 +332,7 @@ postSlackInteractiveWebhookR sig ts body = do
           -- https://github.com/iand675/hs-opentelemetry/tree/attribute-length-limit-fix
           -- in the meantime, this will help us find issues
           let attrs = maybe [] (flattenJsonToAttributes "payload") (decodeStrict body)
-          withCurrentSpan \s -> do 
+          withCurrentSpan \s -> do
             addAttribute s "payload" (decodeUtf8 body)
             addAttributes s (HashMap.fromList attrs)
         _ -> pure ()

@@ -8,11 +8,15 @@
       url = "github:mercurytechnologies/flake-compat";
       flake = false;
     };
+    pre-commit-hooks = {
+      url = "github:cachix/pre-commit-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   nixConfig.allow-import-from-derivation = true; # cabal2nix uses IFD
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
+  outputs = { self, nixpkgs, flake-utils, pre-commit-hooks, ... }:
     let
       ghcVer = "ghc98";
 
@@ -24,6 +28,8 @@
             config.allowBroken = true;
             config.allowUnfree = true;
           };
+          inherit (pkgs) lib;
+          hsPkgs = pkgs.haskell.packages.${ghcVer};
 
         in
         {
@@ -34,18 +40,31 @@
 
           checks = {
             inherit (self.packages.${system}) slacklinker;
+
+            pre-commit-check = pre-commit-hooks.lib.${system}.run {
+              src = ./.;
+              # FIXME(jadel): fourmolu does not understand our language
+              # extensions. This is undoubtedly because it doesn't see a cabal
+              # file which is in turn undoubtedly because ours is gitignored.
+              # Maybe there is a better way to fix this?
+              tools.fourmolu = pkgs.writeShellScriptBin "fourmolu" ''
+                ${lib.getExe hsPkgs.hpack}
+                ${lib.getExe hsPkgs.fourmolu} "$@"
+              '';
+              hooks = {
+                fourmolu.enable = true;
+              };
+            };
           };
 
           # for debugging
           inherit pkgs;
 
           devShells.default =
-            let haskellPackages = pkgs.haskell.packages.${ghcVer};
-            in
-            haskellPackages.shellFor {
+            hsPkgs.shellFor {
               packages = p: [ self.packages.${system}.slacklinker ];
               withHoogle = true;
-              buildInputs = with haskellPackages; [
+              buildInputs = with hsPkgs; [
                 haskell-language-server
                 fourmolu
                 # ghcid
@@ -60,8 +79,7 @@
                 pgformatter # executable is called pg_format
                 cabal2nix
               ]);
-              # Change the prompt to show that you are in a devShell
-              # shellHook = "export PS1='\\e[1;34mdev > \\e[0m'";
+              shellHook = self.checks.${system}.pre-commit-check.shellHook;
             };
         };
     in

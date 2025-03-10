@@ -38,7 +38,7 @@ data SenderEnvelope = SenderEnvelope
   , request :: SenderRequest
   }
 
-mkSenderEnvelope :: MonadIO m => SenderRequest -> m SenderEnvelope
+mkSenderEnvelope :: (MonadIO m) => SenderRequest -> m SenderEnvelope
 mkSenderEnvelope request = do
   otelContext <- OTel.getContext
   pure SenderEnvelope {otelContext, request}
@@ -67,7 +67,7 @@ data Terminate = Terminate deriving stock (Show)
 
 instance Exception Terminate
 
-senderEnqueue :: MonadIO m => SenderRequest -> m ()
+senderEnqueue :: (MonadIO m) => SenderRequest -> m ()
 senderEnqueue req = do
   message <- mkSenderEnvelope req
   atomically $ writeTChan senderChan message

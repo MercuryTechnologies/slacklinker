@@ -49,7 +49,7 @@ updateSlackUsersList wsInfo = do
     convertPage resp =
       fromList @(Vector _) <$> fromEither resp
 
-updateUserData :: MonadIO m => WorkspaceId -> UserDataUpload -> SqlPersistT m ()
+updateUserData :: (MonadIO m) => WorkspaceId -> UserDataUpload -> SqlPersistT m ()
 updateUserData wsId UserDataUpload {items} = do
   for_ items \item -> do
     updateWhere
@@ -61,8 +61,8 @@ doUploadUserData wsInfo cid file = do
   ~(SettingAllowUploadUserData permitted) <- runDB $ getSetting @'AllowUploadUserData
   case (permitted, file) of
     (False, _) ->
-      logMessage $
-        unlines
+      logMessage
+        $ unlines
           [ "Uploading user data is disabled on this Slacklinker instance."
           , "Use `one-off-task set-setting --settingName AllowUploadUserData --value true` on the server to enable it."
           ]
@@ -86,7 +86,7 @@ doUploadUserData wsInfo cid file = do
 
     -- the following absurdity is due to parseRequest taking a method in the
     -- URI, which is not acceptable to me if it's not statically generated
-    parseRequest' :: MonadThrow m => Text -> m Request
+    parseRequest' :: (MonadThrow m) => Text -> m Request
     parseRequest' uri =
       requestFromURI
         =<< maybe

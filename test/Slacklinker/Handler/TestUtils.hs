@@ -1,12 +1,12 @@
 module Slacklinker.Handler.TestUtils where
 
+import Slacklinker.Import
+import Slacklinker.SplitUrl (SlackUrlParts (..), splitSlackUrl)
+import TestImport
 import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Types (UserId (..))
-import Slacklinker.Import
-import TestImport
-import Slacklinker.SplitUrl (SlackUrlParts (..), splitSlackUrl)
 
 sampleUrl :: (Text, SlackUrlParts)
 sampleUrl = (url, fromJust $ splitSlackUrl url)

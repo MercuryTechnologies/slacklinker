@@ -72,19 +72,20 @@ getUriSlackParts (URI {uriPath, uriAuthority, uriQuery = Query {queryPairs}}) = 
   guard $ maybe True validateTs threadTs
   Just SlackUrlParts {..}
 
--- | Validates a Slack timestamp (ts)
--- A valid ts must be either:
--- 1. Exactly 10 digits, followed by a dot, followed by 6 digits
--- 2. A 'p' followed by exactly 16 digits
+{- | Validates a Slack timestamp (ts)
+A valid ts must be either:
+1. Exactly 10 digits, followed by a dot, followed by 6 digits
+2. A 'p' followed by exactly 16 digits
+-}
 validateTs :: Text -> Bool
 validateTs ts
-    | T.null ts = False
-    | T.head ts == 'p' = T.length rest == 16 && T.all isDigit rest
-    | T.length before /= 10 = False
-    | T.length after /= 7 = False -- .123456 is 7 characters
-    | not (T.all isDigit before) = False
-    | not (T.all isDigit (T.tail after)) = False -- skip the dot
-    | otherwise = True
+  | T.null ts = False
+  | T.head ts == 'p' = T.length rest == 16 && T.all isDigit rest
+  | T.length before /= 10 = False
+  | T.length after /= 7 = False -- .123456 is 7 characters
+  | not (T.all isDigit before) = False
+  | not (T.all isDigit (T.tail after)) = False -- skip the dot
+  | otherwise = True
   where
     rest = T.tail ts
     (before, after) = T.breakOn "." ts
@@ -92,7 +93,7 @@ validateTs ts
 -- it would be reasonable to write in github
 -- > i am writing this pr to fix a nasty bug (https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519) that occured in prod
 -- turns out that () are valid characters in URLs, so the URL parser returns https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519)
--- for this super common use case we will just strip ending punctuation like ),;!. from the end of paths & query strings 
+-- for this super common use case we will just strip ending punctuation like ),;!. from the end of paths & query strings
 -- instead of building a more complicated parser
 trimEndings :: Text -> Text
 trimEndings = T.dropWhileEnd (`T.elem` "),;!.")

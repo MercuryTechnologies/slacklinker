@@ -30,7 +30,7 @@ workspaceByRepliedThreadId repliedThreadId = do
   (rt :& ws) <-
     from
       $ table @RepliedThread
-        `innerJoin` table @Workspace
-      `on` (\(rt :& ws) -> rt.workspaceId ==. ws.id)
+      `innerJoin` table @Workspace
+        `on` (\(rt :& ws) -> rt.workspaceId ==. ws.id)
   where_ $ rt.id ==. val repliedThreadId
   pure ws

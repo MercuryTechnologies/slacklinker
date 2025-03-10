@@ -2,6 +2,8 @@ module Slacklinker.Handler.WebhookSpec (spec) where
 
 import Database.Persist
 import Slacklinker.App (HasApp, runAppM, runDB)
+import Slacklinker.Handler.TestData
+import Slacklinker.Handler.TestUtils
 import Slacklinker.Handler.Webhook (handleMessage)
 import Slacklinker.Models
 import Slacklinker.SplitUrl (SlackUrlParts (..), splitSlackUrl)
@@ -11,8 +13,6 @@ import TestUtils (createWorkspace)
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
 import Web.Slack.Types
-import Slacklinker.Handler.TestData
-import Slacklinker.Handler.TestUtils
 
 doLink :: (HasApp m, MonadUnliftIO m) => TeamId -> Text -> Text -> m MessageEvent
 doLink teamId ts url = do
@@ -100,7 +100,7 @@ spec = do
         (wsId, teamId) <- createWorkspace
         let msg = attachedUrlEvent
             Just [MessageAttachment {decoded = Just DecodedMessageAttachment {messageBlocks = Just [attachmentMessageBlock]}}] = msg.attachments
-            AttachmentMessageBlock {message = AttachmentMessageBlockMessage { blocks = [SlackBlockRichText rt]}} = attachmentMessageBlock
+            AttachmentMessageBlock {message = AttachmentMessageBlockMessage {blocks = [SlackBlockRichText rt]}} = attachmentMessageBlock
             Just url = richTextToMaybeUrl rt
             parts = fromJust $ splitSlackUrl url
 
@@ -124,7 +124,7 @@ spec = do
         let msg = messageWithUndecodableAttachment
             Just [MessageAttachment {decoded = decodedAttachments}] = msg.attachments
         handleMessage msg teamId
-      
+
         let expectedChannelId = ConversationId "C07KTH1T4CQ"
             expectedMessageTs = "1730339894.629249"
 
@@ -143,7 +143,7 @@ spec = do
 
     it "will not link a message within the same thread" \app -> do
       -- the setup should be
-      -- lev: heres a parent message 
+      -- lev: heres a parent message
       --  |-> (in thread) lev: i am linking to https://myworkspace.slack.com/archives/C045V0VJT16/p1725559477299859
       --
       -- where the parent message url is: https://myworkspace.slack.com/archives/C045V0VJT16/p1725559477299859
@@ -179,12 +179,12 @@ spec = do
         liftIO $ childUrlParts.threadTs `shouldBe` Just parentUrlParts.messageTs
 
         (Just _) <-
-          runDB $
-            getBy $
-              UniqueRepliedThread
-                wsId
-                childUrlParts.channelId
-                (fromJust childUrlParts.threadTs)
+          runDB
+            $ getBy
+            $ UniqueRepliedThread
+              wsId
+              childUrlParts.channelId
+              (fromJust childUrlParts.threadTs)
 
         allThreads <- runDB $ selectList @RepliedThread [] []
         liftIO $ length allThreads `shouldBe` 1

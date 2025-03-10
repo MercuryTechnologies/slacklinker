@@ -32,7 +32,7 @@ helpMessage =
     ]
 
 handleImCommand ::
-  MonadUnliftIO m =>
+  (MonadUnliftIO m) =>
   WorkspaceMeta ->
   ConversationId ->
   Text ->
@@ -46,8 +46,8 @@ handleImCommand workspaceMeta conversationId message mfiles = do
       Help -> send helpMessage
       JoinAll -> senderEnqueue $ ReqJoinAll workspaceMeta conversationId
       UpdateJoined ->
-        senderEnqueue $
-          ReqUpdateJoined workspaceMeta conversationId
+        senderEnqueue
+          $ ReqUpdateJoined workspaceMeta conversationId
       UploadUserData -> do
         let file = headMay =<< mfiles
         case file of
@@ -55,8 +55,9 @@ handleImCommand workspaceMeta conversationId message mfiles = do
           Just f -> senderEnqueue $ ReqUploadUserData workspaceMeta conversationId f
   where
     send messageContent =
-      senderEnqueue . SendMessage $
-        SendMessageReq
+      senderEnqueue
+        . SendMessage
+        $ SendMessageReq
           { replyToTs = Nothing
           , messageContent
           , channel = conversationId

@@ -1,28 +1,28 @@
-module Slacklinker.Settings
-  ( module Slacklinker.Settings.Types,
-    module Slacklinker.Settings,
-  )
-where
+module Slacklinker.Settings (
+  module Slacklinker.Settings.Types,
+  module Slacklinker.Settings,
+) where
 
 import Data.Aeson (Value, withBool)
+import Data.Aeson.Types (parseEither)
 import Database.Persist (PersistUniqueWrite (upsertBy), getBy)
 import Database.Persist.Sql ((=.))
 import Slacklinker.Models
 import Slacklinker.PersistImport
 import Slacklinker.Settings.Types
-import Data.Aeson.Types (parseEither)
 
--- | Existential to hide the tag of a SlacklinkerSetting in case it is runtime
--- determined.
---
--- NOTE: this is kinda janky: it's dealing with the fact that we can't pass
--- around \"SlacklinkerSetting with any value of \'a\'\". It could possibly be
--- \"improved\" through the use of the \'singletons\' package, although it is
--- up to the reader whether that is an improvement or more cursed code.
---
--- It's basically only used in the case of the one-off-tasks and sadly requires
--- 'unmarshalSettingByTag' and 'marshalSettingEx' which are pure boilerplate.
-data SlacklinkerSettingEx = forall a. MarshalledSetting a => SlacklinkerSettingEx (SlacklinkerSetting a)
+{- | Existential to hide the tag of a SlacklinkerSetting in case it is runtime
+determined.
+
+NOTE: this is kinda janky: it's dealing with the fact that we can't pass
+around \"SlacklinkerSetting with any value of \'a\'\". It could possibly be
+\"improved\" through the use of the \'singletons\' package, although it is
+up to the reader whether that is an improvement or more cursed code.
+
+It's basically only used in the case of the one-off-tasks and sadly requires
+'unmarshalSettingByTag' and 'marshalSettingEx' which are pure boilerplate.
+-}
+data SlacklinkerSettingEx = forall a. (MarshalledSetting a) => SlacklinkerSettingEx (SlacklinkerSetting a)
 
 -- | You don't want this function unless the tag is determined at runtime.
 unmarshalSettingByTag :: SlacklinkerSettingTag -> Value -> Either String SlacklinkerSettingEx
@@ -60,28 +60,28 @@ instance MarshalledSetting 'AllowRegistration where
   reifyTag = AllowRegistration
 
   marshalSetting (SettingAllowRegistration b) = toJSON b
-  unmarshalSetting = parseEither $
-    withBool "AllowRegistration" \b -> pure $ SettingAllowRegistration b
+  unmarshalSetting = parseEither
+    $ withBool "AllowRegistration" \b -> pure $ SettingAllowRegistration b
 
 instance MarshalledSetting 'RequireMutualTLS where
   reifyTag = RequireMutualTLS
 
   marshalSetting (SettingRequireMutualTLS b) = toJSON b
-  unmarshalSetting = parseEither $
-    withBool "RequireMutualTLS" \b -> pure $ SettingRequireMutualTLS b
+  unmarshalSetting = parseEither
+    $ withBool "RequireMutualTLS" \b -> pure $ SettingRequireMutualTLS b
 
 instance MarshalledSetting 'AllowUploadUserData where
   reifyTag = AllowUploadUserData
 
   marshalSetting (SettingAllowUploadUserData b) = toJSON b
-  unmarshalSetting = parseEither $
-    withBool "AllowUploadUserData" \b -> pure $ SettingAllowUploadUserData b
+  unmarshalSetting = parseEither
+    $ withBool "AllowUploadUserData" \b -> pure $ SettingAllowUploadUserData b
 
-setSetting :: MonadIO m => SlacklinkerSettingEx -> SqlPersistT m ()
+setSetting :: (MonadIO m) => SlacklinkerSettingEx -> SqlPersistT m ()
 setSetting setting = do
   let (tag, content) = marshalSettingEx setting
-  void $
-    upsertBy
+  void
+    $ upsertBy
       (UniqueSettingTag tag)
       (Setting {tag, content = JSONB content})
       [SettingContent =. JSONB content]
@@ -91,12 +91,13 @@ settingDefaultByTag AllowRegistration = toJSON True
 settingDefaultByTag RequireMutualTLS = toJSON False
 settingDefaultByTag AllowUploadUserData = toJSON False
 
--- | Example usage (the tilde is an irrefutable pattern, which is unambiguous
--- due to the GADT):
---
--- @
--- ~(SettingAllowRegistration r) <- runDB $ getSetting @'AllowRegistration
--- @
+{- | Example usage (the tilde is an irrefutable pattern, which is unambiguous
+due to the GADT):
+
+@
+~(SettingAllowRegistration r) <- runDB $ getSetting @'AllowRegistration
+@
+-}
 getSetting ::
   forall (tag :: SlacklinkerSettingTag) m.
   (MarshalledSetting tag, MonadIO m) =>

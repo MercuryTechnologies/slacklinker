@@ -11,8 +11,8 @@ import Test.Hspec
 pauseTest :: (HasApp m, MonadIO m) => m ()
 pauseTest = do
   connString <- getsApp (.config.postgresConnectionString)
-  putStrLn $
-    unlines
+  putStrLn
+    $ unlines
       [ "Test paused!"
       , "Connection string:"
       , cs connString

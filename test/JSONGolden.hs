@@ -12,7 +12,7 @@ import Type.Reflection
 filename :: Text -> Text -> FilePath
 filename tycon name = "test/golden" </> unpack tycon </> unpack name
 
-typeName :: forall a. Typeable a => Text
+typeName :: forall a. (Typeable a) => Text
 typeName = pack . tyConName . typeRepTyCon $ typeRep @a
 
 goldenTest :: forall a. (FromJSON a, Show a, Typeable a) => Text -> LByteString -> Golden Text

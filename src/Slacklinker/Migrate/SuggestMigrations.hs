@@ -10,13 +10,13 @@ import Slacklinker.Migrate
 import System.Process.Typed (ExitCodeException (..), byteStringInput, proc, readProcessStdout_, setStdin)
 
 formatMigration ::
-  MonadUnliftIO m =>
+  (MonadUnliftIO m) =>
   Text ->
   m Text
 formatMigration migration = do
   let processConfig =
-        setStdin (byteStringInput . encodeUtf8 . fromStrict $ migration) $
-          proc "pg_format" ["-c", "db/pg_format.conf"]
+        setStdin (byteStringInput . encodeUtf8 . fromStrict $ migration)
+          $ proc "pg_format" ["-c", "db/pg_format.conf"]
   -- if the processing fails, just pass right through. it's fine.
   (decodeUtf8 . toStrict <$> readProcessStdout_ processConfig)
     `catch` (\ExitCodeException {} -> pure migration)
@@ -25,7 +25,7 @@ intentionalMismatches :: [Sql]
 intentionalMismatches = []
 
 suggestMigrations ::
-  MonadUnliftIO m =>
+  (MonadUnliftIO m) =>
   Text ->
   Bool ->
   SqlPersistT m ()
@@ -34,7 +34,10 @@ suggestMigrations migrationName dontFormat = do
   -- I guess we get posix time in our filenames :(
   -- https://github.com/rust-db/refinery/pull/152
   versionNumber <-
-    show @Int . truncate . nominalDiffTimeToSeconds . utcTimeToPOSIXSeconds
+    show @Int
+      . truncate
+      . nominalDiffTimeToSeconds
+      . utcTimeToPOSIXSeconds
       <$> liftIO getCurrentTime
 
   let filename = "db/migrations" </> ("U" <> versionNumber <> "__" <> unpack migrationName <.> "sql")

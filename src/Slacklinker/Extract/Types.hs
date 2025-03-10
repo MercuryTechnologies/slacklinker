@@ -22,15 +22,15 @@ data ExtractedMessageData = ExtractedMessageData
   deriving stock (Show)
 
 class ExtractableMessage m where
-    extractData :: m -> ExtractedMessageData
+  extractData :: m -> ExtractedMessageData
 
 instance ExtractableMessage MessageEvent where
-    extractData MessageEvent {..} = ExtractedMessageData {..}
+  extractData MessageEvent {..} = ExtractedMessageData {..}
 
 instance ExtractableMessage BotMessageEvent where
-    extractData BotMessageEvent {..} = 
-        ExtractedMessageData
-          { -- a bit of a hack, but user ids and bot ids don't overlap
-            user = Slack.UserId { unUserId = botId }
-          , ..
-          }
+  extractData BotMessageEvent {..} =
+    ExtractedMessageData
+      { -- a bit of a hack, but user ids and bot ids don't overlap
+        user = Slack.UserId {unUserId = botId}
+      , ..
+      }
