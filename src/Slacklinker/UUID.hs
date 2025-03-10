@@ -1,10 +1,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
+
 module Slacklinker.UUID (module Data.UUID) where
 
-import Data.UUID (UUID, toASCIIBytes, fromASCIIBytes, fromText, toText)
-import Slacklinker.Import
+import Data.UUID (UUID, fromASCIIBytes, fromText, toASCIIBytes, toText)
 import Database.Persist
-import Database.Persist.Postgresql (PersistFieldSql(..))
+import Database.Persist.Postgresql (PersistFieldSql (..))
+import Slacklinker.Import
 import Web.PathPieces (PathPiece (..))
 
 instance PersistField UUID where

@@ -44,16 +44,17 @@ instance ExceptionResponse ServiceException where
 toServiceException :: (Exception e, ExceptionResponse e) => e -> SomeException
 toServiceException = toException . ServiceException
 
-fromServiceException :: Exception e => SomeException -> Maybe e
+fromServiceException :: (Exception e) => SomeException -> Maybe e
 fromServiceException x = fromException x >>= \(ServiceException e) -> cast e
 
 type role DeriveServiceException representational
+
 newtype DeriveServiceException a = DeriveServiceException a
 
-instance Show e => Show (DeriveServiceException e) where
+instance (Show e) => Show (DeriveServiceException e) where
   showsPrec p (DeriveServiceException e) = showsPrec p e
 
-instance ExceptionResponse e => ExceptionResponse (DeriveServiceException e) where
+instance (ExceptionResponse e) => ExceptionResponse (DeriveServiceException e) where
   status (DeriveServiceException e) = status e
   message (DeriveServiceException e) = message e
   headers (DeriveServiceException e) = headers e
@@ -107,7 +108,7 @@ instance ExceptionResponse RegistrationDisabled where
   status _ = status400
 
 newtype VerificationException = VerificationException SlackVerificationFailed
-  deriving newtype Show
+  deriving newtype (Show)
   deriving (Exception) via DeriveServiceException VerificationException
 
 instance ExceptionResponse VerificationException where
@@ -116,7 +117,7 @@ instance ExceptionResponse VerificationException where
     _ -> status400
 
 newtype SlacklinkerBug = SlacklinkerBug Text
-  deriving newtype Show
+  deriving newtype (Show)
   deriving (Exception) via DeriveServiceException SlacklinkerBug
 
 instance ExceptionResponse SlacklinkerBug where

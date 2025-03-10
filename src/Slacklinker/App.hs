@@ -15,7 +15,7 @@ module Slacklinker.App (
 ) where
 
 import Control.Monad.Catch (MonadThrow)
-import Control.Monad.Fail (MonadFail(..))
+import Control.Monad.Fail (MonadFail (..))
 import Control.Monad.Logger (LogLevel (..), MonadLoggerIO, ToLogStr (..), defaultOutput)
 import Control.Monad.Logger.CallStack (MonadLoggerIO (..))
 import Data.ByteString.Char8 qualified as BS
@@ -40,9 +40,9 @@ data AppConfig = AppConfig
   , postgresConnectionString :: ByteString
   , sqlLogLevel :: LogLevel
   , logLevel :: LogLevel
-  -- do not backlink to posts from these apps
-  -- used to prevent infinite loops
-  , blockedAppIds :: [Text] 
+  , -- do not backlink to posts from these apps
+    -- used to prevent infinite loops
+    blockedAppIds :: [Text]
   }
   deriving stock (Show)
 
@@ -82,6 +82,7 @@ class (Monad m, MonadLogger m) => HasApp m where
   getsApp f = f <$> getApp
 
 type role AppM nominal
+
 newtype AppM a = AppM {unAppM :: ReaderT App IO a}
   deriving newtype (Functor, Applicative, Monad, MonadIO, MonadUnliftIO, MonadThrow)
 
@@ -97,11 +98,11 @@ instance MonadLoggerIO AppM where
     pure \loc source level msg -> do
       case source of
         "SQL" ->
-          when (level >= sqlLogLevel) $
-            defaultOutput stderr loc source level msg
+          when (level >= sqlLogLevel)
+            $ defaultOutput stderr loc source level msg
         _ ->
-          when (level >= logLevel) $
-            defaultOutput stderr loc source level msg
+          when (level >= logLevel)
+            $ defaultOutput stderr loc source level msg
 
 instance HasApp AppM where
   getApp = do

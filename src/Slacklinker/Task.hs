@@ -18,6 +18,7 @@ instance ParseField SlacklinkerSettingTag
 instance ParseRecord SlacklinkerSettingTag
 
 type role Task nominal
+
 data Task w
   = SuggestMigrations
       { migrationName :: w ::: Text <?> "What to call the migration to generate"
@@ -44,7 +45,7 @@ taskMain = do
     runAppM app $ runTask record
 
 doSetSetting ::
-  MonadIO m =>
+  (MonadIO m) =>
   SlacklinkerSettingTag ->
   Value ->
   SqlPersistT m ()

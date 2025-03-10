@@ -114,15 +114,16 @@ getOauthRedirectR code state = do
   teamInfoResp <- runSlack oauthResp.accessToken $ \slackConfig ->
     teamInfo slackConfig $ TeamInfoRequest {domain = Nothing, team = Just oauthResp.team.id}
 
-  _ <- runDB $
-    upsertBy
-      (UniqueWorkspaceSlackId oauthResp.team.id)
-      ( Workspace
-          { slackSubdomain = teamInfoResp.team.domain
-          , slackTeamId = oauthResp.team.id
-          , slackOauthToken = oauthResp.accessToken
-          }
-      )
-      [WorkspaceSlackSubdomain =. teamInfoResp.team.domain]
+  _ <-
+    runDB
+      $ upsertBy
+        (UniqueWorkspaceSlackId oauthResp.team.id)
+        ( Workspace
+            { slackSubdomain = teamInfoResp.team.domain
+            , slackTeamId = oauthResp.team.id
+            , slackOauthToken = oauthResp.accessToken
+            }
+        )
+        [WorkspaceSlackSubdomain =. teamInfoResp.team.domain]
 
   pure "Authorized!"

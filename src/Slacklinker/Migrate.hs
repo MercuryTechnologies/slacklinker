@@ -30,12 +30,12 @@ optionsToUri PG.Options {host, user, password, dbname, port} = do
   -- Postgres will be grumpy if you don't give it a user, so there's not any
   -- reasonable default here
   user' <- getLastBS user
-  pure $
-    URI
+  pure
+    $ URI
       { uriScheme = Scheme "postgres"
       , uriAuthority =
-          Just $
-            Authority
+          Just
+            $ Authority
               { authorityUserInfo =
                   Just $ UserInfo user' (fromMaybe "" $ getLastBS password)
               , authorityHost = Host (cs . toLazyByteString $ urlEncode [] host')
@@ -65,6 +65,7 @@ migrateDatabase opts = do
           env
   -- Intentionally discard the output but record it so it gets into the
   -- exception but doesn't spam in the success case
-  void $ readProcess_ $
-    setEnv (HM.toList newEnv) $
-      proc "refinery" ["migrate", "-e", "POSTGRES_CONECTION_STRING", "-p", "db/migrations"]
+  void
+    $ readProcess_
+    $ setEnv (HM.toList newEnv)
+    $ proc "refinery" ["migrate", "-e", "POSTGRES_CONECTION_STRING", "-p", "db/migrations"]

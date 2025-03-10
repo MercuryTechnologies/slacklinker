@@ -14,7 +14,7 @@ module Slacklinker.Prelude (
   identity,
 ) where
 
-import ClassyPrelude hiding (Handler, delete, deleteBy, span, on, link2, id)
+import ClassyPrelude hiding (Handler, delete, deleteBy, id, link2, on, span)
 import ClassyPrelude qualified as Prelude
 import Control.Monad.Logger.CallStack (MonadLogger (..), logDebug, logError, logInfo, logWarn)
 import Data.Aeson (FromJSON (..), ToJSON (..), defaultOptions, withObject, withText)

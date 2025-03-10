@@ -1,13 +1,12 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Slacklinker.Persist.DeriveEnum
-  ( PostgresEnum,
-    allEnumValues,
-    derivePostgresEnumForSumType,
-    derivePostgresEnumForSumTypeStripCommonPrefix,
-  )
-where
+module Slacklinker.Persist.DeriveEnum (
+  PostgresEnum,
+  allEnumValues,
+  derivePostgresEnumForSumType,
+  derivePostgresEnumForSumTypeStripCommonPrefix,
+) where
 
 import Control.Monad (zipWithM)
 import Control.Monad.Fail (fail)

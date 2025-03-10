@@ -1,16 +1,15 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Slacklinker.PersistImport
-  ( module Database.Persist.TH,
-    module Slacklinker.UUID,
-    module Slacklinker.Import,
-    module Web.Slack.Common,
-    module Database.Esqueleto.PostgreSQL.JSON,
-    module Slacklinker.Persist.DeriveEnum,
-    mkModelUnprefixed,
-    modelFile,
-  )
-where
+module Slacklinker.PersistImport (
+  module Database.Persist.TH,
+  module Slacklinker.UUID,
+  module Slacklinker.Import,
+  module Web.Slack.Common,
+  module Database.Esqueleto.PostgreSQL.JSON,
+  module Slacklinker.Persist.DeriveEnum,
+  mkModelUnprefixed,
+  modelFile,
+) where
 
 import Database.Esqueleto.PostgreSQL.JSON
 import Database.Persist

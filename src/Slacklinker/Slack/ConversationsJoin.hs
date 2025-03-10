@@ -8,20 +8,20 @@ import Servant.API
 import Servant.Client (ClientM, client)
 import Servant.Client.Core (AuthenticatedRequest)
 import Slacklinker.Import
+import Web.FormUrlEncoded (ToForm (..), genericToForm)
 import Web.Slack
 import Web.Slack.Common (ConversationId)
-import Web.Slack.Internal (ResponseJSON, mkSlackAuthenticateReq, run)
-import Web.FormUrlEncoded (genericToForm, ToForm (..))
 import Web.Slack.Conversation (Conversation)
+import Web.Slack.Internal (ResponseJSON, mkSlackAuthenticateReq, run)
 
 -- | <https://api.slack.com/methods/conversations.join>
 data ConversationJoinRequest = ConversationJoinRequest
   { channel :: ConversationId
-  } deriving stock (Eq, Show, Generic)
+  }
+  deriving stock (Eq, Show, Generic)
 
 instance ToForm ConversationJoinRequest where
   toForm = genericToForm snakeCaseFormOptions
-
 
 {- |
 @

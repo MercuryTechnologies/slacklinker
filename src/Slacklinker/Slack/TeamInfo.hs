@@ -8,10 +8,10 @@ import Servant.API
 import Servant.Client (ClientM, client)
 import Servant.Client.Core (AuthenticatedRequest)
 import Slacklinker.Import
+import Web.FormUrlEncoded (ToForm (..), genericToForm)
 import Web.Slack
 import Web.Slack.Common (TeamId)
 import Web.Slack.Internal (ResponseJSON, mkSlackAuthenticateReq, run)
-import Web.FormUrlEncoded (genericToForm, ToForm (..))
 
 -- | <https://api.slack.com/methods/team.info>
 data TeamInfoRequest = TeamInfoRequest
@@ -23,7 +23,8 @@ data TeamInfoRequest = TeamInfoRequest
   -- ^ \"Team to get info on, if omitted, will return information about the
   -- current team. Will only return team that the authenticated token is
   -- allowed to see through external shared channels\"
-  } deriving stock (Eq, Show, Generic)
+  }
+  deriving stock (Eq, Show, Generic)
 
 instance ToForm TeamInfoRequest where
   toForm = genericToForm snakeCaseFormOptions

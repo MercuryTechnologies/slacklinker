@@ -84,8 +84,8 @@ doUpdateJoined wsInfo cid = do
       members <- fetchMemberConversations wsInfo
       -- N+1 query, but the alternative is not type safe.
       runDB $ forM_ (V.mapMaybe channelsOnly members) $ \chan -> do
-        void $
-          upsertBy
+        void
+          $ upsertBy
             (UniqueJoinedChannel wsInfo.workspaceId chan.channelId)
             JoinedChannel {workspaceId = wsInfo.workspaceId, channelId = chan.channelId, name = Just chan.channelName}
             [JoinedChannelName =. Just chan.channelName]
@@ -97,8 +97,8 @@ fetchAllConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Con
 fetchAllConversations wsInfo = do
   slackConfig <- appSlackConfig wsInfo.token
   list_ <-
-    liftIO $
-      conversationsListAll
+    liftIO
+      $ conversationsListAll
         slackConfig
         ( mkListReq
             { listReqExcludeArchived = Just True
