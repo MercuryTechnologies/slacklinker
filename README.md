@@ -9,6 +9,8 @@ using the Servant web framework for Haskell, and the [slack-web] Slack library.
 
 [slack-web]: https://github.com/MercuryTechnologies/slack-web
 
+It also supports backlinking Linear tickets when they are mentioned on Slack by adding an attached Slack message to the tickets.
+
 ## Configuration
 
 ### Slack setup
@@ -22,6 +24,10 @@ site]:
 display_information:
   name: Slacklinker
 features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
   bot_user:
     display_name: Slacklinker
     always_online: true
@@ -30,20 +36,36 @@ oauth_config:
     - https://YOUR_SERVICE/oauth_redirect
   scopes:
     bot:
+      # read chat messages
       - channels:history
+      # join itself to channels
       - channels:join
+      # find public channels
       - channels:read
+      # send messages
       - chat:write
-      - files:read
+      # send reactions to messages
+      - reactions:write
+      # read the team URL
+      - team:read
+      # take commands via IM
       - im:history
+      # know which IMs it is in (?!)
+      - im:read
+      # read files sent in DMs for updating user emoji
+      - files:read
+      # find users by email
       - users:read
+      # find users by email
       - users:read.email
 settings:
   event_subscriptions:
     request_url: https://YOUR_SERVICE/webhook
     bot_events:
+      - app_home_opened
       - channel_created
       - channel_left
+      - file_shared
       - message.channels
       - message.im
   org_deploy_enabled: false
@@ -51,8 +73,9 @@ settings:
   token_rotation_enabled: false
 ```
 
-Additionally, on the "App Home" tab, you have to enable "Messages tab" and
-"Allow users to send Slash commands and messages from the messages tab".
+Additionally, on the "App Home" panel, you have to enable "Messages tab" and
+"Allow users to send Slash commands and messages from the messages tab" as well
+as "Home Tab".
 
 ### App setup
 
@@ -87,9 +110,35 @@ You can set some runtime configuration settings in the database using
 [`src/Slacklinker/Settings/Types.hs`](src/Slacklinker/Settings/Types.hs).
 
 Make Slacklinker not backlink to posts by these apps. This is helpful in making
-sure that Slacklinker won't backlink to itself. It is recommended to bput 
+sure that Slacklinker won't backlink to itself. It is recommended to put
 Slacklinker's own app id here.
-- `BLOCKED_APP_IDS=appid1,appid2
+
+- `BLOCKED_APP_IDS=appid1,appid2`
+
+### Linear setup
+
+Linear integration is optional and is not visible if not configured.
+
+For Linear integration (backlinking Linear tickets with Slack message attachments on the tickets), create a [Linear app].
+The redirect URL should be given as `https://YOUR-SLACKLINKER/linear/oauth_redirect`.
+
+[Linear app]: https://developers.linear.app/docs/oauth/authentication
+
+Configure the following settings in Slacklinker's environment variables:
+
+- `LINEAR_CLIENT_ID` is the Client ID from the Linear App page.
+- `LINEAR_CLIENT_SECRET` is the Signing Secret from the Linear App page.
+- `SLACKLINKER_HOST` is the unqualified Slacklinker domain, i.e.
+  `slacklinker.example.com`.
+
+  This is required to make redirect URLs for Linear OAuth2.
+
+Then, you can link Linear by visiting App Home (the DMs with Slacklinker, on the home tab).
+If it's not visible, make sure it's enabled in the Slack app API settings.
+
+Slacklinker will try linking any Linear ticket identifiers matching a known Linear Team for any given Slack workspace.
+However, the list of teams is not updated automatically.
+To update them, you can run `one-off-task update-all-linear-teams` (which should be put in a cron job in a real deployment) or the IM command `update_linear_teams`.
 
 ### Usage
 
