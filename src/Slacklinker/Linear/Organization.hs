@@ -3,8 +3,8 @@
 
 module Slacklinker.Linear.Organization (LinearOrganizationMetadata (..), linearOrganizationMetadata) where
 
-import Data.GraphQL (MonadGraphQLQuery (runQuerySafe), get)
-import Slacklinker.Linear.GraphQL (resultThrow, runQuery)
+import Data.GraphQL (get)
+import Slacklinker.Linear.GraphQL (runLinearGraphQL, runQueryThrow)
 import Slacklinker.Linear.GraphQL.API (WorkspaceInfoQuery (..))
 import Slacklinker.Linear.Types (LinearBearerToken)
 import Slacklinker.Prelude
@@ -22,9 +22,9 @@ data LinearOrganizationMetadata = LinearOrganizationMetadata
 -- | Retrieve organization-wide metadata from Linear
 linearOrganizationMetadata :: (MonadIO m) => LinearBearerToken -> m LinearOrganizationMetadata
 linearOrganizationMetadata token =
-  toLinearTeamMetadata <$> (resultThrow =<< runQuery token (runQuerySafe WorkspaceInfoQuery))
+  toLinearOrganizationMetadata <$> runLinearGraphQL token (runQueryThrow WorkspaceInfoQuery)
   where
-    toLinearTeamMetadata r =
+    toLinearOrganizationMetadata r =
       LinearOrganizationMetadata
         { id = [get| r.organization.id |]
         , urlKey = [get| r.organization.urlKey |]

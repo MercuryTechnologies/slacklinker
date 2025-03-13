@@ -10,6 +10,7 @@ module Slacklinker.Prelude (
   module Database.Persist.Sql,
   module Data.Default.Class,
   module Database.Persist,
+  module Data.Type.Equality,
   cs,
   identity,
 ) where
@@ -23,6 +24,7 @@ import Data.Default.Class
 import Data.Either.Combinators (mapLeft, mapRight)
 import Data.Proxy (Proxy (..))
 import Data.String.Conversions (cs)
+import Data.Type.Equality (type (~))
 import Database.Persist (Entity (..))
 import Database.Persist.Sql (SqlPersistT)
 import Servant (FromHttpApiData (..), ToHttpApiData (..))

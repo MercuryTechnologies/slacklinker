@@ -25,18 +25,22 @@ handleLinearChannelMessage ::
   JoinedChannelId ->
   ExtractedMessageData ->
   m ()
-handleLinearChannelMessage _ _ _ ev | shouldIgnore ev = pure ()
-handleLinearChannelMessage workspaceE@(Entity wsId ws) kuid jcid ev = do
-  let ticketIds = Set.fromList $ extractTicketIds ev.text
-      uniqueTeams = Set.map (.team) ticketIds
+handleLinearChannelMessage _ _ _ messageData | shouldIgnore messageData = pure ()
+handleLinearChannelMessage
+  workspaceE@(Entity workspaceId workspace)
+  knownUserId
+  joinedChannelId
+  messageData = do
+    let ticketIds = Set.fromList $ extractTicketIds messageData.text
+        uniqueTeams = Set.map (.team) ticketIds
 
-  extantTeams <- Set.fromList <$> runDB (knownLinearTeamUrlKeys wsId (Set.toList uniqueTeams))
+    extantTeams <- Set.fromList <$> runDB (knownLinearTeamUrlKeys workspaceId (Set.toList uniqueTeams))
 
-  let plausibleTicketIds = Set.filter ((`Set.member` extantTeams) . (.team)) ticketIds
-      wsMeta = workspaceMetaFromWorkspaceE workspaceE
-      sup = extractableMessageToSlackUrlParts ws.slackSubdomain ev
+    let plausibleTicketIds = Set.filter ((`Set.member` extantTeams) . (.team)) ticketIds
+        workspaceMeta = workspaceMetaFromWorkspaceE workspaceE
+        slackUrlParts = extractableMessageToSlackUrlParts workspace.slackSubdomain messageData
 
-  let plausibleTicketIds' = Set.toList plausibleTicketIds
-  unless (null plausibleTicketIds)
-    . senderEnqueue
-    $ BacklinkPlausibleLinearTickets wsMeta sup jcid kuid plausibleTicketIds'
+    let plausibleTicketIds' = Set.toList plausibleTicketIds
+    unless (null plausibleTicketIds)
+      . senderEnqueue
+      $ BacklinkPlausibleLinearTickets workspaceMeta slackUrlParts joinedChannelId knownUserId plausibleTicketIds'

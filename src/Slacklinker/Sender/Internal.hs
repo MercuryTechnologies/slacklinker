@@ -10,10 +10,10 @@ import Web.Slack.Common (SlackClientError)
 import Web.Slack.Types (ConversationId (..))
 
 runSlack :: (MonadIO m, HasApp m) => SlackToken -> (SlackConfig -> IO (Either SlackClientError a)) -> m a
-runSlack workspaceToken act = fromEitherM $ runSlack' workspaceToken act
+runSlack workspaceToken act = fromEitherM $ runSlackEither workspaceToken act
 
-runSlack' :: (MonadIO m, HasApp m) => SlackToken -> (SlackConfig -> IO (Either SlackClientError a)) -> m (Either SlackClientError a)
-runSlack' workspaceToken act = do
+runSlackEither :: (MonadIO m, HasApp m) => SlackToken -> (SlackConfig -> IO (Either SlackClientError a)) -> m (Either SlackClientError a)
+runSlackEither workspaceToken act = do
   slackConfig <- appSlackConfig workspaceToken
   liftIO $ act slackConfig
 

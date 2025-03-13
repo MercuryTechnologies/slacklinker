@@ -22,30 +22,30 @@ type Api =
     :> QueryParam' '[Required] "state" Text
     :> Get '[PlainText] Text
 
+decodeBase64Throw :: (MonadIO m) => Text -> m ByteString
+decodeBase64Throw = fromEither . mapLeft BadBase64 . B64.decode . encodeUtf8
+
 getOauthRedirectR :: Text -> Text -> AppM Text
 getOauthRedirectR code state = do
   httpHost <- getsApp (.config.slacklinkerHost) >>= (`orThrow` LinearDisabled)
   linearCreds <- getsApp (.config.linearCreds) >>= (`orThrow` LinearDisabled)
-  mgr <- getsApp (.manager)
+  manager <- getsApp (.manager)
 
-  wsId_ <-
-    runDB
-      $ getNonceWorkspaceAndInvalidate
-      =<< (fromEither . mapLeft BadBase64 . B64.decode . encodeUtf8 $ state)
-  wsId <- wsId_ `orThrow` BadNonce
+  workspaceId_ <- runDB $ getNonceWorkspaceAndInvalidate =<< decodeBase64Throw state
+  workspaceId <- workspaceId_ `orThrow` BadNonce
   now <- liftIO getCurrentTime
 
-  tok <- exchangeCodeForToken httpHost wsId linearCreds mgr code
-  let expiresAt = (`addUTCTime` now) . secondsToNominalDiffTime . fromIntegral <$> tok.expiresIn
-      token = LinearBearerToken tok.accessToken.atoken
+  tokenResponse <- exchangeCodeForToken httpHost workspaceId linearCreds manager code
+  let expiresAt = (`addUTCTime` now) . secondsToNominalDiffTime . fromIntegral <$> tokenResponse.expiresIn
+      token = LinearBearerToken tokenResponse.accessToken.atoken
 
   orgMeta <- linearOrganizationMetadata token
 
   Entity linearOrgId _ <-
     runDB
       $ P.upsertBy
-        (UniqueLinearOrganization wsId orgMeta.id)
-        (LinearOrganization {workspaceId = wsId, linearId = orgMeta.id, urlKey = orgMeta.urlKey, displayName = orgMeta.name})
+        (UniqueLinearOrganization workspaceId orgMeta.id)
+        (LinearOrganization {workspaceId = workspaceId, linearId = orgMeta.id, urlKey = orgMeta.urlKey, displayName = orgMeta.name})
         [LinearOrganizationUrlKey P.=. orgMeta.urlKey, LinearOrganizationDisplayName P.=. orgMeta.name]
 
   void

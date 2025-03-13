@@ -1,26 +1,30 @@
-module Slacklinker.Linear.GraphQL (runQuery, resultThrow) where
+{-# LANGUAGE TypeOperators #-}
 
-import Data.GraphQL (GraphQLResult (..), GraphQLSettings (..))
-import Data.GraphQL.Error (GraphQLException (..))
+module Slacklinker.Linear.GraphQL (runLinearGraphQL, runQueryThrow, LinearGraphQL (..)) where
+
+import Data.GraphQL (GraphQLQuery (..), GraphQLSettings (..), Object, Schema, runQuery)
 import Data.GraphQL.Monad (GraphQLQueryT, MonadGraphQLQuery, defaultGraphQLSettings, runGraphQLQueryT)
+import Data.Kind (Type)
 import Network.HTTP.Client (Request (..))
 import Network.HTTP.Types (hAuthorization)
 import Slacklinker.Linear.Types (LinearBearerToken, unLinearBearerToken)
 import Slacklinker.Prelude
 
-newtype GraphqlApp m a = GraphqlApp {unApp :: GraphQLQueryT m a}
+newtype LinearGraphQL m a = LinearGraphQL {unLinearGraphQL :: GraphQLQueryT m a}
   deriving stock (Functor)
   deriving newtype (Applicative, Monad, MonadIO, MonadGraphQLQuery)
 
-type role GraphqlApp representational nominal
+type role LinearGraphQL representational nominal
 
-runQuery :: (MonadIO m) => LinearBearerToken -> GraphqlApp m a -> m a
-runQuery linearToken app = runGraphQLQueryT (graphqlSettings linearToken.unLinearBearerToken) (unApp app)
+{- | A renaming of 'runQuery' from @graphql-client@ to describe its exception
+behaviour.
+-}
+runQueryThrow ::
+  forall (m :: Type -> Type) query (schema :: Schema). (MonadIO m, MonadGraphQLQuery m, GraphQLQuery query, schema ~ ResultSchema query) => query -> m (Object schema)
+runQueryThrow = runQuery
 
--- XXX(jadel): partial failure is kind of busted here
-resultThrow :: (MonadIO m) => GraphQLResult a -> m a
-resultThrow GraphQLResult {resultErrors = [], resultResult = Just r} = pure r
-resultThrow GraphQLResult {resultErrors} = throwIO $ GraphQLException resultErrors
+runLinearGraphQL :: (MonadIO m) => LinearBearerToken -> LinearGraphQL m a -> m a
+runLinearGraphQL linearToken action = runGraphQLQueryT (graphqlSettings linearToken.unLinearBearerToken) (unLinearGraphQL action)
 
 graphqlSettings :: Text -> GraphQLSettings
 graphqlSettings secret =

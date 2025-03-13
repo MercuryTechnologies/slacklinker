@@ -12,11 +12,11 @@ import Slacklinker.App (HasApp, runDB)
 import Slacklinker.Exceptions (LinearNotAuthenticated (..), SlacklinkerBug (..))
 import Slacklinker.Import
 import Slacklinker.Linear.DB (linearAuthSessionForWorkspace)
-import Slacklinker.Linear.GraphQL (runQuery)
+import Slacklinker.Linear.GraphQL (runLinearGraphQL)
 import Slacklinker.Linear.GraphQL.API (LinkSlackMutation (..))
 import Slacklinker.Linear.Types (LinearTicketId, linearTicketIdToText)
 import Slacklinker.Models (JoinedChannelId, KnownUserId, LinkedLinearTicket (..))
-import Slacklinker.Sender.Internal (runSlack')
+import Slacklinker.Sender.Internal (runSlackEither)
 import Slacklinker.Sender.Types (WorkspaceMeta (..))
 import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Web.Slack.Reactions qualified as Reactions
@@ -29,26 +29,28 @@ doBacklinkLinearTickets ::
   KnownUserId ->
   [LinearTicketId] ->
   m ()
-doBacklinkLinearTickets wsInfo sup jcid kuid tickets = do
+doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets = do
   -- The tickets have known linear teams, so we just have to link them.
-  slackUrl <- buildSlackUrl sup `orThrow` SlacklinkerBug "slack url not successfully reconstituted from a parsed one?!"
-  (Value loId, Value token) <- runDB $ linearAuthSessionForWorkspace wsInfo.workspaceId >>= (`orThrow` LinearNotAuthenticated)
+  slackUrl <- buildSlackUrl slackUrlParts `orThrow` SlacklinkerBug "slack url not successfully reconstituted from a parsed one?!"
+  (Value linearOrgId, Value token) <- runDB $ linearAuthSessionForWorkspace workspaceInfo.workspaceId >>= (`orThrow` LinearNotAuthenticated)
 
   anyLinked <-
     any identity <$> for tickets \ticket -> do
-      res <- runQuery token (runQuerySafe (LinkSlackMutation {_issueId = linearTicketIdToText ticket, _slackLink = slackUrl}))
-      for_ (getResult res) \r -> do
+      -- This can fail (e.g. unknown ticket) and it is okay.
+      -- FIXME(jadel): maybe we should log such failures?
+      resultOrErr <- runLinearGraphQL token (runQuerySafe (LinkSlackMutation {_issueId = linearTicketIdToText ticket, _slackLink = slackUrl}))
+      for_ (getResult resultOrErr) \result -> do
         runDB
           $ P.insertBy
             LinkedLinearTicket
-              { linearOrganizationId = loId
-              , linearTicketId = [get| r.attachmentLinkSlack.attachment.issue.id |]
-              , joinedChannelId = jcid
-              , knownUserId = kuid
-              , messageTs = sup.messageTs
-              , threadTs = sup.threadTs
+              { linearOrganizationId = linearOrgId
+              , linearTicketId = [get| result.attachmentLinkSlack.attachment.issue.id |]
+              , joinedChannelId = joinedChannelId
+              , knownUserId = knownUserId
+              , messageTs = slackUrlParts.messageTs
+              , threadTs = slackUrlParts.threadTs
               }
-      pure . isJust $ getResult res
+      pure . isJust $ getResult resultOrErr
 
   if anyLinked
     then do
@@ -59,8 +61,14 @@ doBacklinkLinearTickets wsInfo sup jcid kuid tickets = do
       react "question"
   where
     react emojiName = do
-      r <- runSlack' wsInfo.token \cfg -> do
-        Reactions.reactionsAdd cfg Reactions.AddReq {channel = sup.channelId, timestamp = sup.messageTs, name = emojiName}
-      case r of
-        Left err -> logWarn $ "Failed to react to message " <> sup.messageTs <> " in channel " <> tshow sup.channelId <> " with error: " <> tshow err
+      result <- runSlackEither workspaceInfo.token \cfg -> do
+        Reactions.reactionsAdd
+          cfg
+          Reactions.AddReq
+            { channel = slackUrlParts.channelId
+            , timestamp = slackUrlParts.messageTs
+            , name = emojiName
+            }
+      case result of
+        Left err -> logWarn $ "Failed to react to message " <> slackUrlParts.messageTs <> " in channel " <> tshow slackUrlParts.channelId <> " with error: " <> tshow err
         Right _ -> pure ()

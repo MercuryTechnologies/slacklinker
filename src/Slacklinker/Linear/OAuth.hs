@@ -35,9 +35,14 @@ linearIdP =
     , idpDeviceAuthorizationEndpoint = error "not using linear device authorization"
     }
 
--- FIXME(jadel): do we need to be able to write (to edit our own comments, e.g.)?
 desiredScopes :: Set HOAuth2.Scope
-desiredScopes = Set.fromList ["read", "write"]
+desiredScopes =
+  Set.fromList
+    [ -- Required to get any metadata about the workspace at all e.g. team IDs.
+      "read"
+    , -- For adding attachments to tickets.
+      "write"
+    ]
 
 deleteExpiredNonces :: (MonadIO m) => UTCTime -> SqlPersistT m ()
 deleteExpiredNonces now = do
@@ -52,14 +57,23 @@ session of the appropriate tenant).
 -}
 makeStateParamAndSave :: (MonadIO m, HasApp m) => WorkspaceId -> m Text
 makeStateParamAndSave workspaceId = do
+  -- 48 bytes of randomness ought to be enough for anyone; not brute forceable
+  -- in the lifetime of the known universe. Arbitrarily chosen to produce 64
+  -- byte long state parameters, in case anyone is limiting the length of
+  -- those.
   entropy <- liftIO $ getEntropy 48
+
+  -- This is the same length as Slack uses for this, but is otherwise
+  -- arbitrary.
+  let tenMinutes = secondsToNominalDiffTime $ 10 * 60
+
   now <- liftIO getCurrentTime
   runDB $ do
     deleteExpiredNonces now
     P.insert_
       $ LinearNonce
         { nonceValue = entropy
-        , expiresAt = secondsToNominalDiffTime (10 * 60) `addUTCTime` now
+        , expiresAt = tenMinutes `addUTCTime` now
         , workspaceId
         }
   pure . decodeUtf8 . B64.encode $ entropy

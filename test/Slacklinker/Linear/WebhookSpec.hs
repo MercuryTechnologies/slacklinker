@@ -10,8 +10,8 @@ import Web.Slack.Experimental.Events.Types (Event (..), EventCallback (..), Slac
 spec :: Spec
 spec = describe "Linear webhooks" do
   it "ignores linear bot messages" do
-    ev <- either error identity . eitherDecode @SlackWebhookEvent <$> readGoldenJSONFile @SlackWebhookEvent "linear"
-    case ev of
+    event <- either error identity . eitherDecode @SlackWebhookEvent <$> readGoldenJSONFile @SlackWebhookEvent "linear"
+    case event of
       (EventEventCallback (EventCallback {event = EventMessage msg})) ->
         shouldIgnore (extractData msg) `shouldBe` True
       _ -> error "wrong event type"

@@ -150,21 +150,21 @@ handleMessage msg teamId = do
       -- FIXME(evanr): The only IO these `record*` functions perform
       -- currently is database inserts, so I think they can/should be run in
       -- the same transaction.
-      kuid <- recordUser workspaceId ev.user
-      jcid_ <-
+      knownUserId <- recordUser workspaceId ev.user
+      joinedChannelId_ <-
         runDB
           $ insertBy
             JoinedChannel {workspaceId, name = Nothing, channelId = ev.channel}
-      let jcid = either entityKey identity jcid_
+      let joinedChannelId = either entityKey identity joinedChannelId_
 
-      repliedThreadIds <- mapMaybeM (handleUrl workspaceE kuid jcid) links
+      repliedThreadIds <- mapMaybeM (handleUrl workspaceE knownUserId joinedChannelId) links
 
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
       forM_ repliedThreadIds $ \todo -> do
         for_ todo $ senderEnqueue . UpdateReply
 
-      handleLinearChannelMessage workspaceE kuid jcid ev
+      handleLinearChannelMessage workspaceE knownUserId joinedChannelId ev
     Im -> do
       handleImCommand (workspaceMetaFromWorkspaceE workspaceE) ev.channel ev.text ev.files
     Group ->
@@ -172,11 +172,11 @@ handleMessage msg teamId = do
       pure ()
   where
     ev = extractData msg
-    handleUrl (Entity workspaceId workspace) kuid jcid url = do
+    handleUrl (Entity workspaceId workspace) knownUserId joinedChannelId url = do
       let linkSource = extractableMessageToSlackUrlParts workspace.slackSubdomain ev
 
       for (splitSlackUrl url) \linkDestination -> do
-        recordLink workspaceId kuid jcid linkSource linkDestination
+        recordLink workspaceId knownUserId joinedChannelId linkSource linkDestination
 
 addEventAttributes :: Event -> TeamId -> Span -> AppM ()
 addEventAttributes event teamId span = do

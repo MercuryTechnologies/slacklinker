@@ -17,10 +17,10 @@ renderAppHome linkState = runIdentity . BB.runBlockBuilder $ do
   renderLinearLinkState linkState
 
 doUpdateUser'sAppHome :: (HasApp m, MonadIO m) => WorkspaceMeta -> UserId -> m ()
-doUpdateUser'sAppHome ws user = do
-  linearState <- getLinearLinkState ws.workspaceId
+doUpdateUser'sAppHome workspace user = do
+  linearState <- getLinearLinkState workspace.workspaceId
 
-  void $ runSlack ws.token \cfg -> do
+  void $ runSlack workspace.token \cfg -> do
     Views.viewsPublish
       cfg
       Views.PublishReq

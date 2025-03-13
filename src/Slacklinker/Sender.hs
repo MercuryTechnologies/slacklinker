@@ -54,20 +54,20 @@ senderHandler loc e = do
       putStrLn $ loc <> ": SENDER EXC: " <> pack (displayException e)
 
 doJoinChannel :: (MonadIO m, HasApp m) => WorkspaceMeta -> ConversationId -> m ()
-doJoinChannel ws cid = do
+doJoinChannel ws conversation = do
   joinResp <- runSlack ws.token \slackConfig ->
-    conversationsJoin slackConfig $ ConversationJoinRequest {channel = cid}
+    conversationsJoin slackConfig $ ConversationJoinRequest {channel = conversation}
   let name = case joinResp.channel of
         Channel c -> Just c.channelName
         -- This case should never be hit since Slacklinker doesn't operate
         -- in DMs or groups.
         _ -> Nothing
-  runDB $ insert_ $ JoinedChannel {workspaceId = ws.workspaceId, channelId = cid, name}
+  runDB $ insert_ $ JoinedChannel {workspaceId = ws.workspaceId, channelId = conversation, name}
   pure ()
 
 fetchMemberConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
-fetchMemberConversations wsInfo = do
-  slackConfig <- appSlackConfig wsInfo.token
+fetchMemberConversations workspaceInfo = do
+  slackConfig <- appSlackConfig workspaceInfo.token
   list_ <- liftIO $ usersConversationsAll slackConfig def
   liftIO $ loadingPage list_ convertPage
   where
@@ -75,30 +75,30 @@ fetchMemberConversations wsInfo = do
       fromList @(Vector _) <$> fromEither resp
 
 doUpdateJoined :: (HasApp m, MonadIO m) => WorkspaceMeta -> ConversationId -> m ()
-doUpdateJoined wsInfo cid = do
+doUpdateJoined workspaceInfo conversation = do
   logMessage "Updating metadata"
   doUpdateJoined'
   logMessage "Done!"
   where
-    logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
+    logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = conversation, messageContent, workspaceMeta = workspaceInfo}
 
     doUpdateJoined' :: (HasApp m, MonadIO m) => m ()
     doUpdateJoined' = do
-      members <- fetchMemberConversations wsInfo
+      members <- fetchMemberConversations workspaceInfo
       -- N+1 query, but the alternative is not type safe.
       runDB $ forM_ (V.mapMaybe channelsOnly members) $ \chan -> do
         void
           $ upsertBy
-            (UniqueJoinedChannel wsInfo.workspaceId chan.channelId)
-            JoinedChannel {workspaceId = wsInfo.workspaceId, channelId = chan.channelId, name = Just chan.channelName}
+            (UniqueJoinedChannel workspaceInfo.workspaceId chan.channelId)
+            JoinedChannel {workspaceId = workspaceInfo.workspaceId, channelId = chan.channelId, name = Just chan.channelName}
             [JoinedChannelName =. Just chan.channelName]
       where
         channelsOnly (Channel c) = Just c
         channelsOnly _ = Nothing
 
 fetchAllConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
-fetchAllConversations wsInfo = do
-  slackConfig <- appSlackConfig wsInfo.token
+fetchAllConversations workspaceInfo = do
+  slackConfig <- appSlackConfig workspaceInfo.token
   list_ <-
     liftIO
       $ conversationsListAll
@@ -121,22 +121,22 @@ fetchAllConversations wsInfo = do
       fromList @(Vector _) . filter (not . isShared) <$> fromEither resp
 
 doJoinAll :: (HasApp m, MonadIO m) => WorkspaceMeta -> ConversationId -> m ()
-doJoinAll wsInfo cid = do
+doJoinAll workspaceInfo conversation = do
   logMessage "On it! Give me a minute to figure out which channels exist..."
 
-  conversations_ <- fetchAllConversations wsInfo
+  conversations_ <- fetchAllConversations workspaceInfo
   let conversations = conversations_ >>= onlyNonMemberChannels
   logMessage $ "Got " <> (tshow $ length conversations) <> " conversations to join. Joining them now."
   forM_ conversations $ \c -> do
     logDebug $ "joining: " <> c.channelName
-    senderEnqueue $ JoinChannel wsInfo c.channelId
+    senderEnqueue $ JoinChannel workspaceInfo c.channelId
 
   logMessage "Done!"
   where
     onlyNonMemberChannels (Channel ch) | ch.channelIsMember /= Just True = singleton ch
     onlyNonMemberChannels _ = empty
 
-    logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent, workspaceMeta = wsInfo}
+    logMessage messageContent = doSendMessage SendMessageReq {replyToTs = Nothing, channel = conversation, messageContent, workspaceMeta = workspaceInfo}
 
 draftMessage :: Workspace -> [(LinkedMessage, Maybe KnownUser, JoinedChannel)] -> Text
 draftMessage workspace links =
@@ -228,30 +228,36 @@ handleTodo r =
         SendMessage req -> do
           addAttribute span "slack.channel" req.channel.unConversationId
           doSendMessage req
-        JoinChannel wsInfo cid -> do
-          addAttribute span "slack.channel" cid.unConversationId
-          addWorkspaceInfo span wsInfo
-          doJoinChannel wsInfo cid
-        ReqJoinAll wsInfo cid -> do
-          addWorkspaceInfo span wsInfo
-          doJoinAll wsInfo cid
-        ReqUpdateJoined wsInfo cid -> do
-          addWorkspaceInfo span wsInfo
-          doUpdateJoined wsInfo cid
+        JoinChannel workspaceInfo conversation -> do
+          addAttribute span "slack.channel" conversation.unConversationId
+          addWorkspaceInfo span workspaceInfo
+          doJoinChannel workspaceInfo conversation
+        ReqJoinAll workspaceInfo conversation -> do
+          addWorkspaceInfo span workspaceInfo
+          doJoinAll workspaceInfo conversation
+        ReqUpdateJoined workspaceInfo conversation -> do
+          addWorkspaceInfo span workspaceInfo
+          doUpdateJoined workspaceInfo conversation
         UpdateReply replyId -> do
           doUpdateReply replyId
-        ReqUploadUserData wsInfo cid files -> do
-          doUploadUserData wsInfo cid files
-        UpdateAppHome wsInfo user -> do
-          doUpdateUser'sAppHome wsInfo user
-        ReqUpdateLinearTeams wsInfo cid -> do
-          updateLinearTeamsCache wsInfo.workspaceId
-          doSendMessage SendMessageReq {replyToTs = Nothing, channel = cid, messageContent = "Done!", workspaceMeta = wsInfo}
-        BacklinkPlausibleLinearTickets wsInfo sup jcid kuid tickets ->
-          doBacklinkLinearTickets wsInfo sup jcid kuid tickets
+        ReqUploadUserData workspaceInfo conversation files -> do
+          doUploadUserData workspaceInfo conversation files
+        UpdateAppHome workspaceInfo user -> do
+          doUpdateUser'sAppHome workspaceInfo user
+        ReqUpdateLinearTeams workspaceInfo conversation -> do
+          updateLinearTeamsCache workspaceInfo.workspaceId
+          doSendMessage
+            SendMessageReq
+              { replyToTs = Nothing
+              , channel = conversation
+              , messageContent = "Done!"
+              , workspaceMeta = workspaceInfo
+              }
+        BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets ->
+          doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
         RequestTerminate -> throwIO Terminate
   where
-    addWorkspaceInfo span wsInfo = addAttribute span "slack.team.id" wsInfo.slackTeamId.unTeamId
+    addWorkspaceInfo span workspaceInfo = addAttribute span "slack.team.id" workspaceInfo.slackTeamId.unTeamId
 
 senderThread :: AppM ()
 senderThread = forever $ do
