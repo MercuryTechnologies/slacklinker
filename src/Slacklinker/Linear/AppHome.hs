@@ -50,16 +50,16 @@ renderLinearLinkState = \case
 workspace
 -}
 getLinearLinkState :: (MonadIO m, HasApp m) => WorkspaceId -> m LinearLinkState
-getLinearLinkState wsId = do
-  bitsMay <- getsApp (\a -> (,) <$> a.config.slacklinkerHost <*> a.config.linearCreds)
+getLinearLinkState workspaceId = do
+  bitsMay <- getsApp (\app -> (,) <$> app.config.slacklinkerHost <*> app.config.linearCreds)
   case bitsMay of
     Nothing -> pure LinearUnavailable
     Just (host, creds) -> do
-      mLinearOrg <- runDB . P.getBy $ UniqueOneLinearOrganizationPerTenant wsId
+      mLinearOrg <- runDB . P.getBy $ UniqueOneLinearOrganizationPerTenant workspaceId
       case entityVal <$> mLinearOrg of
-        Just o -> pure $ LinearLinked o.displayName o.urlKey
+        Just org -> pure $ LinearLinked org.displayName org.urlKey
         Nothing -> do
-          authUri <- Linear.makeAuthorizationURI host wsId creds
+          authUri <- Linear.makeAuthorizationURI host workspaceId creds
           LinearUnlinked
             <$> ( mkNonEmptyText (decodeUtf8 $ serializeURIRef' authUri)
                     `orThrow` SlacklinkerBug "linear authorization uri extremely long"
