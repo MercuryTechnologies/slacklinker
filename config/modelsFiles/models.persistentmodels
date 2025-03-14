@@ -237,10 +237,12 @@ LinkedLinearTicket sql=linked_linear_tickets
   -- | User who sent the message linking the ticket.
   knownUserId KnownUserId
 
-  -- | Slack URL parts: message ts
+  -- | Slack URL parts: message ts (see the definition of 'SlackUrlParts' for
+  -- definitions)
   messageTs Text
 
-  -- | Slack URL parts: enclosing thread
+  -- | Slack URL parts: enclosing thread (see the definition of 'SlackUrlParts'
+  -- for definitions)
   threadTs Text Maybe
 
   -- | NOTE: this index is cursed: (tid, ticket, cid, messageTs, NULL) can appear
