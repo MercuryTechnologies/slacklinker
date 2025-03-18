@@ -127,12 +127,12 @@ getNonceWorkspaceAndInvalidate nonce = do
   pure $ (.workspaceId) . entityVal <$> mEntity
 
 exchangeCodeForToken :: (HasApp m, MonadIO m) => Text -> WorkspaceId -> LinearCreds -> Manager -> Text -> m OAuth2Token
-exchangeCodeForToken httpHost wsId creds mgr code = do
-  idpApp <- HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost wsId creds
-  tokenResp <- runExceptT $ HOAuth2.conduitTokenRequest idpApp mgr (ExchangeToken code)
+exchangeCodeForToken httpHost workspaceId creds manager code = do
+  idpApp <- HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost workspaceId creds
+  tokenResp <- runExceptT $ HOAuth2.conduitTokenRequest idpApp manager (ExchangeToken code)
   fromEither . mapLeft (LinearOAuth2Error . tshow) $ tokenResp
 
 -- | Makes the URI to send the user to for authenticating to a new Linear workspace.
 makeAuthorizationURI :: (HasApp m, MonadIO m) => Text -> WorkspaceId -> LinearCreds -> m (URIRef Absolute)
-makeAuthorizationURI httpHost wsId creds =
-  HOAuth2.mkAuthorizationRequest . HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost wsId creds
+makeAuthorizationURI httpHost workspaceId creds =
+  HOAuth2.mkAuthorizationRequest . HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost workspaceId creds
