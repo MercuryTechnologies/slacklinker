@@ -1,4 +1,4 @@
-module JSONGolden (oneGoldenTest) where
+module JSONGolden (oneGoldenTest, readGoldenJSONFile) where
 
 import Data.Aeson (eitherDecode)
 import Data.ByteString.Lazy qualified as LBS
@@ -14,6 +14,9 @@ filename tycon name = "test/golden" </> unpack tycon </> unpack name
 
 typeName :: forall a. (Typeable a) => Text
 typeName = pack . tyConName . typeRepTyCon $ typeRep @a
+
+readGoldenJSONFile :: forall a. (Typeable a) => Text -> IO LBS.ByteString
+readGoldenJSONFile name = LBS.readFile $ filename (typeName @a) name <> ".json"
 
 goldenTest :: forall a. (FromJSON a, Show a, Typeable a) => Text -> LByteString -> Golden Text
 goldenTest name rawInput = do
@@ -32,5 +35,5 @@ goldenTest name rawInput = do
 
 oneGoldenTest :: forall a. (FromJSON a, Show a, Typeable a) => Text -> SpecM () ()
 oneGoldenTest name = do
-  input <- runIO . LBS.readFile $ filename (typeName @a) name <> ".json"
+  input <- runIO $ readGoldenJSONFile @a name
   it (unpack name) $ goldenTest @a name input

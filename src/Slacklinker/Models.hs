@@ -5,6 +5,7 @@
 module Slacklinker.Models where
 
 import Data.Aeson (Value (..))
+import Slacklinker.Linear.Types
 import Slacklinker.PersistImport
 import Slacklinker.Settings.Types
 import Slacklinker.Types

@@ -21,7 +21,18 @@ pauseTest = do
   void getChar
 
 testAppConfig :: ByteString -> AppConfig
-testAppConfig postgresConnectionString = AppConfig {slackClientSecret = credsErr, slackSigningSecret = credsErr, slackClientId = credsErr, postgresConnectionString, sqlLogLevel = LevelInfo, logLevel = LevelInfo, blockedAppIds = []}
+testAppConfig postgresConnectionString =
+  AppConfig
+    { slackClientSecret = credsErr
+    , slackSigningSecret = credsErr
+    , slackClientId = credsErr
+    , postgresConnectionString
+    , sqlLogLevel = LevelInfo
+    , logLevel = LevelInfo
+    , blockedAppIds = []
+    , linearCreds = Nothing
+    , slacklinkerHost = Nothing
+    }
   where
     credsErr = error "attempt to access credentials in test, this won't work"
 

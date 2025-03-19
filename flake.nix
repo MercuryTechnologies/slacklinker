@@ -69,6 +69,7 @@
                 fourmolu
                 # ghcid
                 cabal-install
+                graphql-client
                 # fast-tags
                 # friendly
               ] ++ (with pkgs; [
@@ -114,10 +115,9 @@
                             }
                             hsuper.slacklinker;
 
-                        # broken bounds. as mercury people, you can fix this
-                        # upstream :)
-                        slack-web =
-                          super.haskell.lib.doJailbreak hsuper.slack-web;
+                        # broken bounds >:(
+                        hoauth2 =
+                          super.haskell.lib.doJailbreak hsuper.hoauth2;
 
                         tmp-postgres =
                           super.haskell.lib.dontCheck hsuper.tmp-postgres;

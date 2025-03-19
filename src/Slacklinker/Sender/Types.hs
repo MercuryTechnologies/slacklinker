@@ -4,11 +4,14 @@ import Database.Persist
 import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import Slacklinker.Import
+import Slacklinker.Linear.Types (LinearTicketId)
 import Slacklinker.Models
+import Slacklinker.SplitUrl (SlackUrlParts)
 import Slacklinker.Types (SlackToken (..))
 import System.IO.Unsafe (unsafePerformIO)
 import Web.Slack.Conversation
 import Web.Slack.Files.Types (FileObject (..))
+import Web.Slack.Types (UserId)
 
 data WorkspaceMeta = WorkspaceMeta
   { token :: SlackToken
@@ -60,6 +63,18 @@ data SenderRequest
     ReqUpdateJoined WorkspaceMeta ConversationId
   | UpdateReply RepliedThreadId
   | ReqUploadUserData WorkspaceMeta ConversationId FileObject
+  | -- | Update the given user's App Home view. Triggered by the @app_home_opened@ event from Slack.
+    --
+    -- <https://api.slack.com/events/app_home_opened>
+    UpdateAppHome WorkspaceMeta UserId
+  | -- | Update the cache of Linear teams for the workspace and log to the
+    -- given conversation that it is done.
+    ReqUpdateLinearTeams WorkspaceMeta ConversationId
+  | -- | Backlink something that looks like a Linear ticket (and we know the
+    --   Linear team probably exists for).
+    --
+    --   Takes the Slack message URL that generated it.
+    BacklinkPlausibleLinearTickets WorkspaceMeta SlackUrlParts JoinedChannelId KnownUserId [LinearTicketId]
   | RequestTerminate
   deriving stock (Show, Generic)
 

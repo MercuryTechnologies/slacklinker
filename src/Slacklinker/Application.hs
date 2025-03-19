@@ -9,6 +9,7 @@ import Slacklinker.App (App, AppM, runAppM)
 import Slacklinker.Handler.Authorize (getAuthorizeR, getOauthRedirectR)
 import Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR)
 import Slacklinker.Import
+import Slacklinker.Linear.Handler qualified as Linear
 import Slacklinker.Types
 import Web.Slack.Experimental.RequestVerification
 
@@ -32,12 +33,14 @@ type Api =
       :> QueryParam' '[Required] "code" Text
       :> QueryParam' '[Required] "state" Text
       :> Get '[PlainText] Text
+    :<|> "linear"
+      :> Linear.Api
 
 context :: Context '[]
 context = EmptyContext
 
 server :: ServerT Api AppM
-server = aliveH :<|> aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH
+server = aliveH :<|> aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH :<|> Linear.linearH
   where
     authorizeH = getAuthorizeR
     oauthRedirectH = getOauthRedirectR

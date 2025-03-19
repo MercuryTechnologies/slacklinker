@@ -1,0 +1,16 @@
+# Lists the Linear teams in an organization
+query ListTeams($startCursor: String) {
+  organization {
+    urlKey
+  }
+  teams(after: $startCursor, first: 100, includeArchived: false) {
+    nodes {
+      name
+      key
+    }
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+  }
+}

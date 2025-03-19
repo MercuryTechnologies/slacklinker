@@ -58,6 +58,7 @@ messageEventWithBlocks ts blocks =
     , appId = Nothing
     , botId = Nothing
     , attachments = Nothing
+    , botProfile = Nothing
     }
 
 botMessageEventWithBlocks :: Text -> [SlackBlock] -> BotMessageEvent

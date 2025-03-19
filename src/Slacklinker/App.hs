@@ -28,6 +28,7 @@ import Network.HTTP.Client (Manager)
 import Network.HTTP.Client.TLS (newTlsManager)
 import OpenTelemetry.Instrumentation.Persistent qualified as OTel
 import Slacklinker.Import
+import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..))
 import Slacklinker.Types (SlackClientSecret (..), SlackToken (..))
 import System.Environment (getEnv, lookupEnv)
 import Web.Slack (SlackConfig (..))
@@ -37,12 +38,23 @@ data AppConfig = AppConfig
   { slackClientSecret :: SlackClientSecret
   , slackSigningSecret :: SlackSigningSecret
   , slackClientId :: Text
+  , linearCreds :: Maybe LinearCreds
+  -- ^ Credentials for a Linear API app.
+  -- See <https://developers.linear.app/docs/oauth/authentication>
+  , slacklinkerHost :: Maybe Text
+  -- ^ Host used for HTTPS URIs back to Slacklinker. This is required for the
+  -- Linear integration to generate OAuth2 redirect URLs.
+  --
+  -- Example: @slacklinker.example.com@.
+  --
+  -- Maybe this could use the HTTP Host header, but it seems prone to allowing
+  -- security bugs.
   , postgresConnectionString :: ByteString
   , sqlLogLevel :: LogLevel
   , logLevel :: LogLevel
-  , -- do not backlink to posts from these apps
-    -- used to prevent infinite loops
-    blockedAppIds :: [Text]
+  , blockedAppIds :: [Text]
+  -- ^ do not backlink to posts from these apps
+  -- used to prevent infinite loops
   }
   deriving stock (Show)
 
@@ -136,6 +148,13 @@ getConfiguration = do
   slackSigningSecret <- SlackSigningSecret <$> getEnvBS "SLACK_SIGNING_SECRET"
   slackClientSecret <- SlackClientSecret . cs <$> getEnvBS "SLACK_CLIENT_SECRET"
   slackClientId <- cs <$> getEnvBS "SLACK_CLIENT_ID"
+
+  linearClientId <- fmap (LinearClientId . pack) <$> lookupEnv "LINEAR_CLIENT_ID"
+  linearClientSecret <- fmap (LinearClientSecret . pack) <$> lookupEnv "LINEAR_CLIENT_SECRET"
+  let linearCreds = LinearCreds <$> linearClientId <*> linearClientSecret
+
+  slacklinkerHost <- fmap cs <$> lookupEnv "SLACKLINKER_HOST"
+
   postgresConnectionString <- getEnvBS "POSTGRES_CONNECTION_STRING"
   logLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_LEVEL"
   sqlLogLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_SQL"

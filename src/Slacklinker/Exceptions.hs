@@ -107,6 +107,22 @@ data RegistrationDisabled = RegistrationDisabled
 instance ExceptionResponse RegistrationDisabled where
   status _ = status400
 
+-- | Linear integration is disabled
+data LinearDisabled = LinearDisabled
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException LinearDisabled
+
+instance ExceptionResponse LinearDisabled where
+  status _ = status400
+
+-- | Linear integration is not authenticated
+data LinearNotAuthenticated = LinearNotAuthenticated
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException LinearNotAuthenticated
+
+instance ExceptionResponse LinearNotAuthenticated where
+  status _ = status400
+
 newtype VerificationException = VerificationException SlackVerificationFailed
   deriving newtype (Show)
   deriving (Exception) via DeriveServiceException VerificationException
@@ -115,6 +131,13 @@ instance ExceptionResponse VerificationException where
   status (VerificationException e) = case e of
     VerificationSignatureMismatch -> status401
     _ -> status400
+
+newtype LinearOAuth2Error = LinearOAuth2Error Text
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException LinearOAuth2Error
+
+instance ExceptionResponse LinearOAuth2Error where
+  status _ = status500
 
 newtype SlacklinkerBug = SlacklinkerBug Text
   deriving newtype (Show)

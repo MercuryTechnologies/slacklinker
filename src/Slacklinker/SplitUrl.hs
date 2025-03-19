@@ -18,7 +18,10 @@ Slack message URLs are constructed of three parts:
  * "ts", which looks suspiciously like a high-precision Unix timestamp with
    the decimal point stripped and a \"p\" prepended. In this structure, the
    @ts@ is represented with a decimal point, in the same format as
-   @thread_ts@.
+   @thread_ts@. It is, in effect, Slack's message ID, not just a timestamp.
+
+   See <https://api.slack.com/events/message> for an official mention of its
+   semantics.
  * "thread_ts", which denotes the *parent* of the message in a thread. All
    messages in a thread share the same thread_ts. If there's no @thread_ts@,
    the message is directly in a channel.

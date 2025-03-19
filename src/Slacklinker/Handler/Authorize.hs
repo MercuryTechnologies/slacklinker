@@ -27,6 +27,8 @@ desiredScopes =
       "channels:read"
     , -- send messages
       "chat:write"
+    , -- send reactions to messages
+      "reactions:write"
     , -- read the team URL
       "team:read"
     , -- take commands via IM
@@ -62,8 +64,14 @@ deleteExpiredNonces now = do
 
 getAndSaveState :: AppM ByteString
 getAndSaveState = do
+  -- 48 bytes of randomness ought to be enough for anyone; not brute forceable
+  -- in the lifetime of the known universe. Arbitrarily chosen to produce 64
+  -- byte long state parameters, in case anyone is limiting the length of
+  -- those.
   entropy <- liftIO $ getEntropy 48
+
   now <- liftIO getCurrentTime
+
   runDB $ do
     deleteExpiredNonces now
     insert_ $ Nonce {nonceValue = entropy, expiresAt = (secondsToNominalDiffTime $ 10 * 60) `addUTCTime` now}

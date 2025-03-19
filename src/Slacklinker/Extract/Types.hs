@@ -1,6 +1,7 @@
 module Slacklinker.Extract.Types where
 
 import Slacklinker.Import
+import Slacklinker.SplitUrl (SlackUrlParts (..))
 import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.Blocks
 import Web.Slack.Experimental.Events.Types
@@ -18,19 +19,35 @@ data ExtractedMessageData = ExtractedMessageData
   , files :: Maybe [FileObject]
   , attachments :: Maybe [MessageAttachment]
   , appId :: Maybe Text
+  , botDisplayName :: Maybe Text
   }
   deriving stock (Show)
+
+-- | Makes the parts to link to the event associated with this message.
+extractableMessageToSlackUrlParts :: Text -> ExtractedMessageData -> SlackUrlParts
+extractableMessageToSlackUrlParts subdomain ev =
+  SlackUrlParts
+    { workspaceName = subdomain
+    , channelId = ev.channel
+    , messageTs = ev.ts
+    , threadTs = ev.threadTs
+    }
 
 class ExtractableMessage m where
   extractData :: m -> ExtractedMessageData
 
 instance ExtractableMessage MessageEvent where
-  extractData MessageEvent {..} = ExtractedMessageData {..}
+  extractData MessageEvent {..} =
+    ExtractedMessageData
+      { botDisplayName = (.name) <$> botProfile
+      , ..
+      }
 
 instance ExtractableMessage BotMessageEvent where
   extractData BotMessageEvent {..} =
     ExtractedMessageData
       { -- a bit of a hack, but user ids and bot ids don't overlap
         user = Slack.UserId {unUserId = botId}
+      , botDisplayName = Nothing
       , ..
       }

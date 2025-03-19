@@ -8,6 +8,7 @@ import Data.Aeson (Value, camelTo2)
 import Options.Generic
 import Slacklinker.App (App (..), AppM, appShutdownNoSender, appStartupNoSender, makeApp, runAppM, runDB)
 import Slacklinker.Import
+import Slacklinker.Linear.Teams (updateAllLinearTeamsCaches)
 import Slacklinker.Migrate.SuggestMigrations (suggestMigrations)
 import Slacklinker.Settings
 
@@ -28,6 +29,7 @@ data Task w
       { settingName :: w ::: SlacklinkerSettingTag
       , value :: w ::: ByteString
       }
+  | UpdateAllLinearTeams
   deriving stock (Generic)
 
 kebabCaseModifier :: Modifiers
@@ -56,3 +58,4 @@ doSetSetting settingName value = do
 runTask :: Task Unwrapped -> AppM ()
 runTask (SuggestMigrations name dontFormat) = runDB $ suggestMigrations name dontFormat
 runTask (SetSetting settingName value) = runDB $ doSetSetting settingName =<< decodeThrow value
+runTask UpdateAllLinearTeams = updateAllLinearTeamsCaches

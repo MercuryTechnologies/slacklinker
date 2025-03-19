@@ -1,0 +1,13 @@
+# Adds a Slack link attachment to the given ticket. It takes both MER-123 style
+# ticket IDs and UUID style ticket IDs.
+mutation LinkSlack($issueId: String!, $slackLink: String!) {
+  # FIXME(jadel): we actually could pass syncToCommentThread, but that might be annoying, unsure
+  attachmentLinkSlack(issueId: $issueId, url: $slackLink) {
+    success
+    attachment {
+      issue {
+        id
+      }
+    }
+  }
+}

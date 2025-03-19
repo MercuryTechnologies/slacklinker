@@ -35,6 +35,7 @@ forwardedMessageEvent =
     , threadTs = Nothing
     , appId = Nothing
     , botId = Nothing
+    , botProfile = Nothing
     , attachments =
         Just
           [ MessageAttachment
@@ -102,6 +103,7 @@ attachedUrlEvent =
     , threadTs = Nothing
     , appId = Nothing
     , botId = Nothing
+    , botProfile = Nothing
     , attachments =
         Just
           [ MessageAttachment
@@ -173,6 +175,7 @@ messageWithUndecodableAttachment =
     , threadTs = Nothing
     , appId = Just "A01BP7R4KNY"
     , botId = Just "B07LDR01Z63"
+    , botProfile = Nothing
     , attachments =
         Just
           [ MessageAttachment
