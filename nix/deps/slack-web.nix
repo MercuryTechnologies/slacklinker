@@ -11,8 +11,8 @@
 }:
 mkDerivation {
   pname = "slack-web";
-  version = "2.1.0.0";
-  sha256 = "8606da0f7b0e0c373eb219a3fe4bc3cc82e61a1e8999df55f041ae41d6a036d0";
+  version = "2.2.0.0";
+  sha256 = "4566e5af09111db9839ff09ff91849018b243b48c0353ae5566825441c4ce5db";
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
