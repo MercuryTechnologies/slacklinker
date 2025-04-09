@@ -3,9 +3,10 @@
 {-# LANGUAGE TupleSections #-}
 
 -- | Manages updating the Linear teams in the database.
-module Slacklinker.Linear.Teams (updateLinearTeamsCache, updateAllLinearTeamsCaches) where
+module Slacklinker.Linear.Teams (getLinearTeamsUncached, updateLinearTeamsCache, updateAllLinearTeamsCaches) where
 
 import Data.GraphQL (get)
+import Data.Vector qualified as V
 import Database.Esqueleto.Experimental (Value (..))
 import Database.Esqueleto.Experimental qualified as E
 import Database.Persist qualified as P
@@ -13,7 +14,7 @@ import Slacklinker.App (HasApp, runDB)
 import Slacklinker.Exceptions (LinearNotAuthenticated (..))
 import Slacklinker.Import (orThrow)
 import Slacklinker.Linear.DB (linearAuthSessionForWorkspace, linearAuthSessions)
-import Slacklinker.Linear.GraphQL (runLinearGraphQL, runQueryThrow)
+import Slacklinker.Linear.GraphQL (PageInfo (..), paginateQuery, runLinearGraphQL, runQueryThrow)
 import Slacklinker.Linear.GraphQL.API (ListTeamsQuery (..))
 import Slacklinker.Models
 import Slacklinker.Prelude
@@ -24,20 +25,27 @@ data LinearTeamAPI = LinearTeamAPI
   }
   deriving stock (Show)
 
-getLinearTeamsUncached :: (HasApp m, MonadIO m) => WorkspaceId -> m (LinearOrganizationId, [LinearTeamAPI])
+getLinearTeamsUncached :: (HasApp m, MonadIO m) => WorkspaceId -> m (LinearOrganizationId, Vector LinearTeamAPI)
 getLinearTeamsUncached workspaceId = do
   -- FIXME(jadel): pagination
   session_ <- runDB $ linearAuthSessionForWorkspace workspaceId
   (Value linearOrgId, Value token) <- session_ `orThrow` LinearNotAuthenticated
 
-  res <- runLinearGraphQL token (runQueryThrow (ListTeamsQuery {_startCursor = Nothing}))
+  (linearOrgId,) <$> run token
+  where
+    extractPageInfo obj = PageInfo {endCursor = [get| obj.endCursor |], hasNextPage = [get| obj.hasNextPage |]}
 
-  let workspaceUrlKey = [get| res.organization.urlKey |]
-  pure
-    . (linearOrgId,)
-    $ map
-      (LinearTeamAPI workspaceUrlKey . [get| .key |])
-      [get| res.teams.nodes |]
+    run token = runLinearGraphQL token $ paginateQuery \startCursor -> do
+      res <- runQueryThrow (ListTeamsQuery {_startCursor = startCursor})
+
+      let
+        workspaceUrlKey = [get| res.organization.urlKey |]
+        thisResult =
+          V.fromList
+            . map
+              (LinearTeamAPI workspaceUrlKey . [get| .key |])
+            $ [get| res.teams.nodes |]
+      pure (extractPageInfo [get| res.teams.pageInfo |], thisResult)
 
 updateLinearTeamsCache :: (HasApp m, MonadIO m) => WorkspaceId -> m ()
 updateLinearTeamsCache workspaceId = do
