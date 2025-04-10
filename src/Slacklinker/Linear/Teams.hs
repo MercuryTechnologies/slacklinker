@@ -27,7 +27,6 @@ data LinearTeamAPI = LinearTeamAPI
 
 getLinearTeamsUncached :: (HasApp m, MonadIO m) => WorkspaceId -> m (LinearOrganizationId, Vector LinearTeamAPI)
 getLinearTeamsUncached workspaceId = do
-  -- FIXME(jadel): pagination
   session_ <- runDB $ linearAuthSessionForWorkspace workspaceId
   (Value linearOrgId, Value token) <- session_ `orThrow` LinearNotAuthenticated
 
