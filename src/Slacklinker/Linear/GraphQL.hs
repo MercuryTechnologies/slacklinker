@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeOperators #-}
 
-module Slacklinker.Linear.GraphQL (runLinearGraphQL, runQueryThrow, LinearGraphQL (..)) where
+module Slacklinker.Linear.GraphQL (runLinearGraphQL, runQueryThrow, LinearGraphQL (..), PageInfo (..), Cursor, paginateQuery) where
 
 import Data.GraphQL (GraphQLQuery (..), GraphQLSettings (..), Object, Schema, runQuery)
 import Data.GraphQL.Monad (GraphQLQueryT, MonadGraphQLQuery, defaultGraphQLSettings, runGraphQLQueryT)
@@ -36,3 +36,25 @@ graphqlSettings secret =
               (hAuthorization, encodeUtf8 secret) : requestHeaders req
           }
     }
+
+data PageInfo = PageInfo {endCursor :: Maybe Text, hasNextPage :: Bool}
+  deriving stock (Show)
+
+type Cursor = Text
+
+-- | Paginates a response, accumulating results into a full list.
+paginateQuery ::
+  (MonadGraphQLQuery m, Monoid collection) =>
+  (Maybe Cursor -> m (PageInfo, collection)) ->
+  m collection
+paginateQuery fetch =
+  go Nothing mempty
+  where
+    go cursor accumulator = do
+      (pageInfo, items) <- fetch cursor
+      let accumulator' = accumulator <> items
+      if pageInfo.hasNextPage
+        then
+          go pageInfo.endCursor accumulator'
+        else
+          pure accumulator'

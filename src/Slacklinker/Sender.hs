@@ -29,13 +29,13 @@ import Slacklinker.Sender.AppHome
 import Slacklinker.Sender.Internal
 import Slacklinker.Sender.Types
 import Slacklinker.Sender.UserDataUpload
-import Slacklinker.Slack.ConversationsJoin
 import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Slacklinker.Types (Emoji (..))
 import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
 import Web.Slack (chatPostMessage, chatUpdate, conversationsListAll)
 import Web.Slack.Chat (PostMsgReq (..), PostMsgRsp (..), UpdateReq (..), UpdateRsp (..), mkPostMsgReq, mkUpdateReq)
 import Web.Slack.Conversation
+import Web.Slack.Conversation qualified as Conversation
 import Web.Slack.Pager (loadingPage)
 import Web.Slack.UsersConversations (usersConversationsAll)
 
@@ -56,8 +56,8 @@ senderHandler loc e = do
 doJoinChannel :: (MonadIO m, HasApp m) => WorkspaceMeta -> ConversationId -> m ()
 doJoinChannel ws conversation = do
   joinResp <- runSlack ws.token \slackConfig ->
-    conversationsJoin slackConfig $ ConversationJoinRequest {channel = conversation}
-  let name = case joinResp.channel of
+    conversationsJoin slackConfig $ Conversation.JoinReq {Conversation.joinReqChannel = conversation}
+  let name = case joinResp.joinRspChannel of
         Channel c -> Just c.channelName
         -- This case should never be hit since Slacklinker doesn't operate
         -- in DMs or groups.
