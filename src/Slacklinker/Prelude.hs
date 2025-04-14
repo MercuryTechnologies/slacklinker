@@ -11,6 +11,7 @@ module Slacklinker.Prelude (
   module Data.Default.Class,
   module Database.Persist,
   module Data.Type.Equality,
+  module Data.List.NonEmpty,
   cs,
   identity,
 ) where
@@ -22,6 +23,7 @@ import Data.Aeson (FromJSON (..), ToJSON (..), defaultOptions, withObject, withT
 import Data.Aeson.TH (deriveFromJSON, deriveJSON, deriveToJSON)
 import Data.Default.Class
 import Data.Either.Combinators (mapLeft, mapRight)
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Proxy (Proxy (..))
 import Data.String.Conversions (cs)
 import Data.Type.Equality (type (~))

@@ -74,7 +74,7 @@ data SenderRequest
     --   Linear team probably exists for).
     --
     --   Takes the Slack message URL that generated it.
-    BacklinkPlausibleLinearTickets WorkspaceMeta SlackUrlParts JoinedChannelId KnownUserId [LinearTicketId]
+    BacklinkPlausibleLinearTickets WorkspaceMeta SlackUrlParts JoinedChannelId KnownUserId (NonEmpty LinearTicketId)
   | RequestTerminate
   deriving stock (Show, Generic)
 

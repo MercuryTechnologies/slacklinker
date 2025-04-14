@@ -1,5 +1,6 @@
 module Slacklinker.Linear.Webhook (shouldIgnore, handleLinearChannelMessage) where
 
+import Data.List.NonEmpty qualified as NE
 import Data.Set qualified as Set
 import Slacklinker.App (HasApp, runDB)
 import Slacklinker.Extract.Types (ExtractedMessageData (..), extractableMessageToSlackUrlParts)
@@ -41,6 +42,6 @@ handleLinearChannelMessage
         slackUrlParts = extractableMessageToSlackUrlParts workspace.slackSubdomain messageData
 
     let plausibleTicketIds' = Set.toList plausibleTicketIds
-    unless (null plausibleTicketIds)
-      . senderEnqueue
-      $ BacklinkPlausibleLinearTickets workspaceMeta slackUrlParts joinedChannelId knownUserId plausibleTicketIds'
+    for_ (NE.nonEmpty plausibleTicketIds')
+      $ senderEnqueue
+      . BacklinkPlausibleLinearTickets workspaceMeta slackUrlParts joinedChannelId knownUserId
