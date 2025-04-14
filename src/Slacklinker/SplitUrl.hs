@@ -53,10 +53,13 @@ getSlackSubdomain (Host host) = stripSuffix ".slack.com" (decodeUtf8 host)
 {- | Splits a Slack URL into bits
 
 >>> splitSlackUrl "https://jadeapptesting.slack.com/archives/C043YJGBY49/p1663961111250399"
-Just (SlackUrlParts {channelId = ConversationId {unConversationId = "C043YJGBY49"}, messageTs = "1663961111.250399", threadTs = Nothing})
+Just (SlackUrlParts {workspaceName = "jadeapptesting", channelId = ConversationId {unConversationId = "C043YJGBY49"}, messageTs = "1663961111.250399", threadTs = Nothing})
 
 >>> splitSlackUrl "https://jadeapptesting.slack.com/archives/C043YJGBY49/p1663980532340209?thread_ts=1663966375.232459&cid=C043YJGBY49"
-Just (SlackUrlParts {channelId = ConversationId {unConversationId = "C043YJGBY49"}, messageTs = "1663980532.340209", threadTs = Just "1663966375.232459"})
+Just (SlackUrlParts {workspaceName = "jadeapptesting", channelId = ConversationId {unConversationId = "C043YJGBY49"}, messageTs = "1663980532.340209", threadTs = Just "1663966375.232459"})
+
+>>> splitSlackUrl "https://foobar.enterprise.slack.com/archives/C043YJGBY49/p1663980532340209?thread_ts=1663966375.232459&cid=C043YJGBY49"
+Just (SlackUrlParts {workspaceName = "foobar.enterprise", channelId = ConversationId {unConversationId = "C043YJGBY49"}, messageTs = "1663980532.340209", threadTs = Just "1663966375.232459"})
 -}
 splitSlackUrl :: Text -> Maybe SlackUrlParts
 splitSlackUrl url = do
@@ -93,11 +96,12 @@ validateTs ts
     rest = T.tail ts
     (before, after) = T.breakOn "." ts
 
--- it would be reasonable to write in github
--- > i am writing this pr to fix a nasty bug (https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519) that occured in prod
--- turns out that () are valid characters in URLs, so the URL parser returns https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519)
--- for this super common use case we will just strip ending punctuation like ),;!. from the end of paths & query strings
--- instead of building a more complicated parser
+{- | it would be reasonable to write in github
+> i am writing this pr to fix a nasty bug (https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519) that occured in prod
+turns out that () are valid characters in URLs, so the URL parser returns https://myteam.slack.com/archives/C05JCSKNE2G/p1729711459290519)
+for this super common use case we will just strip ending punctuation like ),;!. from the end of paths & query strings
+instead of building a more complicated parser
+-}
 trimEndings :: Text -> Text
 trimEndings = T.dropWhileEnd (`T.elem` "),;!.")
 
