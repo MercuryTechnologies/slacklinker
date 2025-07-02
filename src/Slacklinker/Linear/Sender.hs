@@ -116,8 +116,7 @@ doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId 
 
   case overallLinkingResult of
     Created -> do
-      react "linear"
-      react "slacklinker"
+      react "slacklinker-linear"
     -- Errors; probably just bogus ticket IDs
     (OtherError _errs) -> do
       react "slacklinker"
