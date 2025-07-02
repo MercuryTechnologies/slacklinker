@@ -16,6 +16,12 @@ will catch the human/bot message that initiated them instead.
 -}
 shouldIgnore :: ExtractedMessageData -> Bool
 shouldIgnore ExtractedMessageData {botDisplayName = Just dn} = "Linear" `isPrefixOf` dn
+-- HACK: We can't actually cleanly get info that this is Linear from the
+-- webhook data we are sent. Hardcoding the Linear app ID feels deeply
+-- unsatisfying.
+--
+-- This case deals with the "Create Issue" button in the context menu.
+shouldIgnore ExtractedMessageData {appId = Just "AEMQ3Q4F4"} = True
 shouldIgnore _ = False
 
 -- | Inserts todo items to backlink tickets in a message.
