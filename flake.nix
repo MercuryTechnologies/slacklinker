@@ -79,6 +79,7 @@
                 postgresql
                 pgformatter # executable is called pg_format
                 cabal2nix
+                process-compose
               ]);
               shellHook = self.checks.${system}.pre-commit-check.shellHook;
             };
