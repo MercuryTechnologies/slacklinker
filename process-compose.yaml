@@ -1,0 +1,38 @@
+is_strict: true
+processes:
+  postgres:
+    availability:
+      restart: no
+    command: exec ./scripts/start-db.sh
+    log_configuration:
+      disable_json: true
+      fields_order:
+      - message
+      flush_each_line: true
+      no_color: true
+      no_metadata: true
+    log_location: $PC_DIR/logs/postgres.log
+    readiness_probe:
+      exec:
+        command: env -u PGUSER psql --command 'show timezone;' --dbname postgres
+      failure_threshold: 5
+      initial_delay_seconds: 2
+      timeout_seconds: 4
+    shutdown:
+      signal: 2
+  postgres_init:
+    availability:
+      restart: no
+    command: exec ./scripts/setup-db.sh
+    log_configuration:
+      disable_json: true
+      fields_order:
+      - message
+      flush_each_line: true
+      no_color: true
+      no_metadata: true
+    log_location: $PC_DIR/logs/postgres-setup.log
+    depends_on:
+      postgres:
+        condition: process_healthy
+version: '0.5'

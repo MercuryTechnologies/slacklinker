@@ -5,7 +5,9 @@ export OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_HONEYCOMB_APIKEY
 export OTEL_TRACES_SAMPLER=always_on
 export OTEL_SERVICE_NAME=slacklinker
 
-export POSTGRES_CONNECTION_STRING=postgresql://slacklinker@localhost:5432/slacklinker
+# Not required if you run `process-compose up`; you only need this setting if
+# you are using externally-provisioned postgres.
+# export POSTGRES_CONNECTION_STRING=postgresql://slacklinker@localhost:5432/slacklinker
 
 export SLACK_CLIENT_ID=YOUR_SLACK_CLIENT_ID
 export SLACK_CLIENT_SECRET=YOUR_SLACK_CLIENT_SECRET

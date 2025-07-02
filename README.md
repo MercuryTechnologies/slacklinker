@@ -176,11 +176,18 @@ production.
 [ngrok]: https://ngrok.com/
 
 We recommend using [`direnv`][direnv] and [`nix-direnv`][nix-direnv] to get a
-working environment for working on slacklinker. You can see a sample for
-`.envrc` at [./.envrc.sample](./.envrc.sample).
+working environment for working on slacklinker.
+
+You can see a sample for `.envrc.local` at [./.envrc.local.sample](./.envrc.local.sample).
 
 [nix-direnv]: https://github.com/nix-community/nix-direnv
 [direnv]: https://direnv.net/
+
+### Database
+
+The database is, by default, provisioned by `process-compose` and will work automatically once you run `process-compose up` in a terminal in a Nix shell in the Slacklinker repo.
+
+If you want to use system postgres, set `DONT_PROCESS_COMPOSE` in `.envrc.local`.
 
 ### Schema changes & Migrations
 
