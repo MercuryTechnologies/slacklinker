@@ -124,6 +124,14 @@ data LinearNotAuthenticated = LinearNotAuthenticated
 instance ExceptionResponse LinearNotAuthenticated where
   status _ = status400
 
+-- | Linear integration experienced a race condition
+data LinearRaced = LinearRaced
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException LinearRaced
+
+instance ExceptionResponse LinearRaced where
+  status _ = status400
+
 newtype VerificationException = VerificationException SlackVerificationFailed
   deriving newtype (Show)
   deriving (Exception) via DeriveServiceException VerificationException

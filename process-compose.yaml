@@ -11,7 +11,7 @@ processes:
       flush_each_line: true
       no_color: true
       no_metadata: true
-    log_location: $PC_DIR/logs/postgres.log
+    log_location: .pc/logs/postgres.log
     readiness_probe:
       exec:
         command: env -u PGUSER psql --command 'show timezone;' --dbname postgres
@@ -31,7 +31,7 @@ processes:
       flush_each_line: true
       no_color: true
       no_metadata: true
-    log_location: $PC_DIR/logs/postgres-setup.log
+    log_location: .pc/logs/postgres-setup.log
     depends_on:
       postgres:
         condition: process_healthy
