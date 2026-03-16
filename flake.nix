@@ -18,7 +18,7 @@
 
   outputs = { self, nixpkgs, flake-utils, pre-commit-hooks, ... }:
     let
-      ghcVer = "ghc98";
+      ghcVer = "ghc910";
 
       out = system:
         let
@@ -88,19 +88,21 @@
     flake-utils.lib.eachDefaultSystem out // {
       # this stuff is *not* per-system
       overlays = {
-        default = self: super: {
+        default = self: super:
+        let inherit (self.haskell.lib) dontCheck doJailbreak packagesFromDirectory packageSourceOverrides;
+        in {
           haskell = super.haskell // {
             packages = super.haskell.packages // {
               ${ghcVer} = super.haskell.packages."${ghcVer}".override (oldArgs: {
                 overrides =
-                  self.lib.fold
+                  self.lib.foldr
                     super.lib.composeExtensions
                     (oldArgs.overrides or (_: _: { }))
-                    [ (self.haskell.lib.packageSourceOverrides {
+                    [ (packageSourceOverrides {
                         slacklinker = ./.;
                       })
 
-                      (self.haskell.lib.packagesFromDirectory {
+                      (packagesFromDirectory {
                         directory = ./nix/deps;
                       })
 
@@ -116,22 +118,14 @@
                             }
                             hsuper.slacklinker;
 
-                        # broken bounds >:(
-                        hoauth2 =
-                          super.haskell.lib.doJailbreak hsuper.hoauth2;
+                        tmp-postgres = dontCheck hsuper.tmp-postgres;
 
-                        tmp-postgres =
-                          super.haskell.lib.dontCheck hsuper.tmp-postgres;
-
-                        # possible macOS lack-of-sandbox related breakage
-                        http2 =
-                          if super.stdenv.isDarwin
-                          then super.haskell.lib.dontCheck hsuper.http2
-                          else hsuper.http2;
-
-                        # some kinda weird test issues on macOS
-                        port-utils =
-                          super.haskell.lib.dontCheck hsuper.port-utils;
+                        # bounds...
+                        hs-opentelemetry-instrumentation-wai = doJailbreak hsuper.hs-opentelemetry-instrumentation-wai;
+                        hs-opentelemetry-instrumentation-hspec = doJailbreak hsuper.hs-opentelemetry-instrumentation-hspec;
+                        hs-opentelemetry-instrumentation-conduit = doJailbreak hsuper.hs-opentelemetry-instrumentation-conduit;
+                        hs-opentelemetry-instrumentation-http-client = doJailbreak hsuper.hs-opentelemetry-instrumentation-http-client;
+                        hs-opentelemetry-instrumentation-persistent = doJailbreak hsuper.hs-opentelemetry-instrumentation-persistent;
                       })
                     ];
               });

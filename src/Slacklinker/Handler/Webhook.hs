@@ -120,13 +120,13 @@ recordLink workspaceId userId joinedChannelId linkSource linkDestination = do
         && (
              -- link2 is the thread parent of link1
              link1.threadTs
-              == Just link2.messageTs
-              ||
-              -- link1 is the thread parent of link2
-              link2.threadTs
-              == Just link1.messageTs
-              -- both are children of the same thread
-              || (link1.threadTs `isJustAndEqual` link2.threadTs)
+               == Just link2.messageTs
+               ||
+               -- link1 is the thread parent of link2
+               link2.threadTs
+               == Just link1.messageTs
+               -- both are children of the same thread
+               || (link1.threadTs `isJustAndEqual` link2.threadTs)
            )
 
 recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m KnownUserId

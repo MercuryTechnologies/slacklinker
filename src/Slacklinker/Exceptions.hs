@@ -22,8 +22,9 @@ class (Typeable e, Show e) => ExceptionResponse e where
   message :: e -> Text
   message = fromString . show
 
-  -- | Additional headers to include in the response. Content-type headers are
-  -- created by default.
+  {- | Additional headers to include in the response. Content-type headers are
+  created by default.
+  -}
   headers :: e -> [Header]
   headers _ = []
 

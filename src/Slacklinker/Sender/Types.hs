@@ -49,31 +49,36 @@ mkSenderEnvelope request = do
 data SenderRequest
   = SendMessage SendMessageReq
   | JoinChannel WorkspaceMeta ConversationId
-  | -- | Join all public non-archived channels in the workspace. The provided
-    -- ConversationId is for feedback to the user.
+  | {- | Join all public non-archived channels in the workspace. The provided
+    ConversationId is for feedback to the user.
+    -}
     ReqJoinAll WorkspaceMeta ConversationId
-  | -- | Update joined channel metadata. Required to make link previews include
-    -- channels. This is a one-off fixup: when Slacklinker joins new channels
-    -- with join_all, it will gather this metadata.
-    --
-    -- FIXME(jadel): If you manually join slacklinker to a channel, the metadata
-    -- will probably also be outdated? Maybe we need to subscribe to
-    -- <https://api.slack.com/events/member_joined_channel> and add a new
-    -- scheduled task?
+  | {- | Update joined channel metadata. Required to make link previews include
+    channels. This is a one-off fixup: when Slacklinker joins new channels
+    with join_all, it will gather this metadata.
+
+    FIXME(jadel): If you manually join slacklinker to a channel, the metadata
+    will probably also be outdated? Maybe we need to subscribe to
+    <https://api.slack.com/events/member_joined_channel> and add a new
+    scheduled task?
+    -}
     ReqUpdateJoined WorkspaceMeta ConversationId
   | UpdateReply RepliedThreadId
   | ReqUploadUserData WorkspaceMeta ConversationId FileObject
-  | -- | Update the given user's App Home view. Triggered by the @app_home_opened@ event from Slack.
-    --
-    -- <https://api.slack.com/events/app_home_opened>
+  | {- | Update the given user's App Home view. Triggered by the @app_home_opened@ event from Slack.
+
+    <https://api.slack.com/events/app_home_opened>
+    -}
     UpdateAppHome WorkspaceMeta UserId
-  | -- | Update the cache of Linear teams for the workspace and log to the
-    -- given conversation that it is done.
+  | {- | Update the cache of Linear teams for the workspace and log to the
+    given conversation that it is done.
+    -}
     ReqUpdateLinearTeams WorkspaceMeta ConversationId
-  | -- | Backlink something that looks like a Linear ticket (and we know the
-    --   Linear team probably exists for).
-    --
-    --   Takes the Slack message URL that generated it.
+  | {- | Backlink something that looks like a Linear ticket (and we know the
+    Linear team probably exists for).
+
+    Takes the Slack message URL that generated it.
+    -}
     BacklinkPlausibleLinearTickets WorkspaceMeta SlackUrlParts JoinedChannelId KnownUserId (NonEmpty LinearTicketId)
   | RequestTerminate
   deriving stock (Show, Generic)
