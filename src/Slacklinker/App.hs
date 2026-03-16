@@ -39,22 +39,25 @@ data AppConfig = AppConfig
   , slackSigningSecret :: SlackSigningSecret
   , slackClientId :: Text
   , linearCreds :: Maybe LinearCreds
-  -- ^ Credentials for a Linear API app.
-  -- See <https://developers.linear.app/docs/oauth/authentication>
+  {- ^ Credentials for a Linear API app.
+  See <https://developers.linear.app/docs/oauth/authentication>
+  -}
   , slacklinkerHost :: Maybe Text
-  -- ^ Host used for HTTPS URIs back to Slacklinker. This is required for the
-  -- Linear integration to generate OAuth2 redirect URLs.
-  --
-  -- Example: @slacklinker.example.com@.
-  --
-  -- Maybe this could use the HTTP Host header, but it seems prone to allowing
-  -- security bugs.
+  {- ^ Host used for HTTPS URIs back to Slacklinker. This is required for the
+  Linear integration to generate OAuth2 redirect URLs.
+
+  Example: @slacklinker.example.com@.
+
+  Maybe this could use the HTTP Host header, but it seems prone to allowing
+  security bugs.
+  -}
   , postgresConnectionString :: ByteString
   , sqlLogLevel :: LogLevel
   , logLevel :: LogLevel
   , blockedAppIds :: [Text]
-  -- ^ do not backlink to posts from these apps
-  -- used to prevent infinite loops
+  {- ^ do not backlink to posts from these apps
+  used to prevent infinite loops
+  -}
   }
   deriving stock (Show)
 
