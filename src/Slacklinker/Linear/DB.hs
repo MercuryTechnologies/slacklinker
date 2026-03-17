@@ -1,4 +1,4 @@
-module Slacklinker.Linear.DB (linearAuthSessions, linearAuthSessionForWorkspace, lockLinearAuthSession, knownLinearTeamUrlKeys) where
+module Slacklinker.Linear.DB (linearAuthSessions, linearAuthSessionForWorkspace, linearAuthSessionsWithoutRefreshToken, lockLinearAuthSession, knownLinearTeamUrlKeys) where
 
 import Database.Esqueleto.Experimental
 import Database.Esqueleto.PostgreSQL (forNoKeyUpdateOf)
@@ -21,6 +21,16 @@ linearAuthSessions = do
       `innerJoin` (table @LinearAPIAuthSession)
         `on` (\(linearOrg :& session) -> linearOrg.id ==. session.linearOrganizationId)
   pure (linearOrg, session)
+
+-- | Sessions that don't have a refresh token yet (i.e. old long-lived tokens)
+linearAuthSessionsWithoutRefreshToken ::
+  (MonadIO m) =>
+  SqlPersistT m [(Value LinearOrganizationId, Entity LinearAPIAuthSession)]
+linearAuthSessionsWithoutRefreshToken = do
+  select do
+    (linearOrg, session) <- linearAuthSessions
+    where_ $ isNothing_ session.refreshToken
+    pure (linearOrg.id, session)
 
 -- | Gets a Linear token for the given workspace
 linearAuthSessionForWorkspace ::

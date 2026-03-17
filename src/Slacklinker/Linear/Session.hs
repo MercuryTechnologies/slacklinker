@@ -1,18 +1,22 @@
 -- | Getting a usable auth token from Linear.
 module Slacklinker.Linear.Session where
 
+import Data.Aeson qualified as A
 import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Database.Esqueleto.Experimental (Value (..))
 import Database.Persist qualified as P
+import Network.HTTP.Client (Manager, Request (..), RequestBody (..), Response (..), httpLbs, parseRequest_)
+import Network.HTTP.Types (hContentType)
 import Network.OAuth.OAuth2 (AccessToken (..), OAuth2Token (..), RefreshToken (..))
 import Slacklinker.App (App (..), AppConfig (..), HasApp (..), runDB)
 import Slacklinker.Exceptions (LinearDisabled (..), LinearNotAuthenticated (..), LinearRaced (..))
 import Slacklinker.Import
 import Slacklinker.Linear.DB (linearAuthSessionForWorkspace, lockLinearAuthSession)
 import Slacklinker.Linear.OAuth (refreshSession)
-import Slacklinker.Linear.Types (LinearBearerToken (..), LinearRefreshToken (..))
+import Slacklinker.Linear.Types (LinearBearerToken (..), LinearClientId (..), LinearClientSecret (..), LinearCreds (..), LinearRefreshToken (..))
 import Slacklinker.Models (EntityField (..), LinearAPIAuthSession (..), LinearOrganizationId, Unique (..), WorkspaceId)
+import Web.FormUrlEncoded (Form (..), urlEncodeFormStable)
 
 {- | Updates the authentication session for a given Linear org with a new
 access/refresh token pair from a token request.
@@ -80,3 +84,24 @@ getToken' refresher workspaceId = do
 -- | Get a fresh token without using a stub.
 getToken :: (MonadUnliftIO m, HasApp m) => WorkspaceId -> m (LinearOrganizationId, LinearBearerToken)
 getToken = getToken' realRefreshToken
+
+{- | Migrate an old long-lived Linear access token to a new short-lived token
+with a refresh token, using Linear's temporary migration endpoint.
+-}
+migrateOldToken :: Manager -> LinearCreds -> LinearBearerToken -> IO OAuth2Token
+migrateOldToken manager creds (LinearBearerToken token) = do
+  let body =
+        urlEncodeFormStable
+          $ Form
+          $ mapFromList
+            [ ("access_token", [token])
+            , ("client_id", [creds.linearClientId.unLinearClientId])
+            , ("client_secret", [creds.linearClientSecret.unLinearClientSecret])
+            ]
+      req =
+        (parseRequest_ "POST https://api.linear.app/oauth/migrate_old_token")
+          { requestHeaders = [(hContentType, "application/x-www-form-urlencoded")]
+          , requestBody = RequestBodyLBS body
+          }
+  resp <- httpLbs req manager
+  fromEither . mapLeft AesonDecodeError . A.eitherDecode $ responseBody resp
