@@ -25,7 +25,7 @@ import Data.Text (splitOn)
 import Database.Persist.Postgresql (SqlBackend, createPostgresqlPool, runSqlPoolWithExtensibleHooks)
 import Database.Persist.SqlBackend.SqlPoolHooks
 import Network.HTTP.Client (Manager)
-import Network.HTTP.Client.TLS (newTlsManager)
+import Network.TLS.SSLKeyLogFile qualified as Keylog
 import OpenTelemetry.Instrumentation.Persistent qualified as OTel
 import Slacklinker.Import
 import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..))
@@ -175,6 +175,6 @@ makeApp' :: AppConfig -> IO App
 makeApp' config = do
   -- FIXME(jadel): I want to instrument the HTTP manager for debugging
   -- purposes, but hs-opentelemetry does not support it.
-  manager <- newTlsManager
+  manager <- Keylog.makeManager
   let runtimeInfo = error "runtime info not initialized yet. this is a bug"
   pure App {..}

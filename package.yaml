@@ -61,6 +61,7 @@ dependencies:
   - th-abstraction
   - time
   - tls
+  - tls-sslkeylogfile
   - transformers
   - typed-process
   - unliftio
