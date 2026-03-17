@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskellQuotes #-}
 
 -- | Implements authentication setup for Linear for a workspace.
-module Slacklinker.Linear.OAuth (makeAuthorizationURI, getNonceWorkspaceAndInvalidate, exchangeCodeForToken) where
+module Slacklinker.Linear.OAuth (makeAuthorizationURI, getNonceWorkspaceAndInvalidate, exchangeCodeForToken, refreshSession) where
 
 import Control.Monad.Trans.Except (runExceptT)
 import Crypto.Random.Entropy (getEntropy)
@@ -12,11 +12,11 @@ import Data.Set qualified as Set
 import Data.Time (addUTCTime, secondsToNominalDiffTime)
 import Database.Persist qualified as P
 import Network.HTTP.Client (Manager)
-import Network.OAuth.OAuth2 (ExchangeToken (..), OAuth2Token)
+import Network.OAuth.OAuth2 (ExchangeToken (..), OAuth2Token, RefreshToken (..))
 import Network.OAuth2.Experiment qualified as HOAuth2
 import Slacklinker.App (HasApp (..), runDB)
 import Slacklinker.Exceptions (LinearOAuth2Error (..))
-import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..))
+import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..), LinearRefreshToken (..))
 import Slacklinker.Models (EntityField (..), LinearNonce (..), Unique (..), WorkspaceId)
 import Slacklinker.Prelude
 import URI.ByteString (Absolute, Authority (..), Host (..), Scheme (..), URIRef (..))
@@ -136,3 +136,11 @@ exchangeCodeForToken httpHost workspaceId creds manager code = do
 makeAuthorizationURI :: (HasApp m, MonadIO m) => Text -> WorkspaceId -> LinearCreds -> m (URIRef Absolute)
 makeAuthorizationURI httpHost workspaceId creds =
   HOAuth2.mkAuthorizationRequest . HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost workspaceId creds
+
+-- | Uses the refresh token to get a new session.
+refreshSession :: (HasApp m, MonadIO m) => Text -> WorkspaceId -> LinearCreds -> Manager -> LinearRefreshToken -> m OAuth2Token
+refreshSession httpHost workspaceId creds manager token = do
+  logInfo $ "Refresh Linear API session for workspace" <> tshow workspaceId
+  idpApp <- HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost workspaceId creds
+  resp <- runExceptT $ HOAuth2.conduitRefreshTokenRequest idpApp manager (RefreshToken token.unLinearRefreshToken)
+  fromEither . mapLeft (LinearOAuth2Error . tshow) $ resp

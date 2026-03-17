@@ -3,7 +3,6 @@
 module Slacklinker.Linear.Handler (Api, linearH) where
 
 import Data.ByteString.Base64.URL qualified as B64
-import Data.Time.Clock (addUTCTime, secondsToNominalDiffTime)
 import Database.Persist qualified as P
 import Network.OAuth.OAuth2 (AccessToken (..), OAuth2Token (..))
 import Servant.API (Get, PlainText, QueryParam', Required, (:>))
@@ -12,8 +11,9 @@ import Slacklinker.Exceptions (BadBase64 (..), BadNonce (..), LinearDisabled (..
 import Slacklinker.Import (orThrow)
 import Slacklinker.Linear.OAuth (exchangeCodeForToken, getNonceWorkspaceAndInvalidate)
 import Slacklinker.Linear.Organization (LinearOrganizationMetadata (..), linearOrganizationMetadata)
+import Slacklinker.Linear.Session (updateAuthSession)
 import Slacklinker.Linear.Types (LinearBearerToken (..))
-import Slacklinker.Models (EntityField (..), LinearAPIAuthSession (..), LinearOrganization (..), Unique (..))
+import Slacklinker.Models (EntityField (..), LinearOrganization (..), Unique (..))
 import Slacklinker.Prelude
 
 type Api =
@@ -36,24 +36,15 @@ getOauthRedirectR code state = do
   now <- liftIO getCurrentTime
 
   tokenResponse <- exchangeCodeForToken httpHost workspaceId linearCreds manager code
-  let expiresAt = (`addUTCTime` now) . secondsToNominalDiffTime . fromIntegral <$> tokenResponse.expiresIn
-      token = LinearBearerToken tokenResponse.accessToken.atoken
+  orgMeta <- linearOrganizationMetadata (LinearBearerToken tokenResponse.accessToken.atoken)
 
-  orgMeta <- linearOrganizationMetadata token
-
-  Entity linearOrgId _ <-
-    runDB
-      $ P.upsertBy
+  runDB do
+    Entity linearOrgId _ <-
+      P.upsertBy
         (UniqueLinearOrganization workspaceId orgMeta.id)
         (LinearOrganization {workspaceId = workspaceId, linearId = orgMeta.id, urlKey = orgMeta.urlKey, displayName = orgMeta.name})
         [LinearOrganizationUrlKey P.=. orgMeta.urlKey, LinearOrganizationDisplayName P.=. orgMeta.name]
-
-  void
-    . runDB
-    $ P.upsertBy
-      (UniqueLinearAPIAuthSession linearOrgId)
-      (LinearAPIAuthSession {linearOrganizationId = linearOrgId, token, expiresAt})
-      [LinearAPIAuthSessionToken P.=. token, LinearAPIAuthSessionExpiresAt P.=. expiresAt]
+    updateAuthSession now linearOrgId tokenResponse
 
   pure "Authorized!"
 

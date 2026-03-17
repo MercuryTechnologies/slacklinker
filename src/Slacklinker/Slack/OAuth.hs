@@ -8,8 +8,7 @@ import Servant.API
 import Servant.Client (ClientM, client)
 import Slacklinker.Import
 import Slacklinker.Types (SlackClientSecret (..), SlackToken)
-import Web.FormUrlEncoded (ToForm, genericToForm)
-import Web.Internal.FormUrlEncoded (ToForm (..))
+import Web.FormUrlEncoded (ToForm (..), genericToForm)
 import Web.Slack.Common (TeamId (..))
 import Web.Slack.Internal
 import Web.Slack.Pager (Response)

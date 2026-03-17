@@ -11,11 +11,10 @@ import Database.Esqueleto.Experimental (Value (..))
 import Database.Esqueleto.Experimental qualified as E
 import Database.Persist qualified as P
 import Slacklinker.App (HasApp, runDB)
-import Slacklinker.Exceptions (LinearNotAuthenticated (..))
-import Slacklinker.Import (orThrow)
-import Slacklinker.Linear.DB (linearAuthSessionForWorkspace, linearAuthSessions)
+import Slacklinker.Linear.DB (linearAuthSessions)
 import Slacklinker.Linear.GraphQL (PageInfo (..), paginateQuery, runLinearGraphQL, runQueryThrow)
 import Slacklinker.Linear.GraphQL.API (ListTeamsQuery (..))
+import Slacklinker.Linear.Session (getToken)
 import Slacklinker.Models
 import Slacklinker.Prelude
 
@@ -25,10 +24,9 @@ data LinearTeamAPI = LinearTeamAPI
   }
   deriving stock (Show)
 
-getLinearTeamsUncached :: (HasApp m, MonadIO m) => WorkspaceId -> m (LinearOrganizationId, Vector LinearTeamAPI)
+getLinearTeamsUncached :: (MonadUnliftIO m, HasApp m) => WorkspaceId -> m (LinearOrganizationId, Vector LinearTeamAPI)
 getLinearTeamsUncached workspaceId = do
-  session_ <- runDB $ linearAuthSessionForWorkspace workspaceId
-  (Value linearOrgId, Value token) <- session_ `orThrow` LinearNotAuthenticated
+  (linearOrgId, token) <- getToken workspaceId
 
   (linearOrgId,) <$> run token
   where
@@ -46,14 +44,14 @@ getLinearTeamsUncached workspaceId = do
             $ [get| res.teams.nodes |]
       pure (extractPageInfo [get| res.teams.pageInfo |], thisResult)
 
-updateLinearTeamsCache :: (HasApp m, MonadIO m) => WorkspaceId -> m ()
+updateLinearTeamsCache :: (MonadUnliftIO m, HasApp m) => WorkspaceId -> m ()
 updateLinearTeamsCache workspaceId = do
   (linearOrgId, teams) <- getLinearTeamsUncached workspaceId
   -- FIXME(jadel): delete obsolete linear teams
   runDB do
     for_ teams \team -> P.insertBy LinearTeam {linearOrganizationId = linearOrgId, urlKey = team.urlKey}
 
-updateAllLinearTeamsCaches :: (HasApp m, MonadIO m) => m ()
+updateAllLinearTeamsCaches :: (MonadUnliftIO m, HasApp m) => m ()
 updateAllLinearTeamsCaches = do
   orgs <- fmap (fmap unValue) . runDB $ E.select do
     (linearOrg, _session) <- linearAuthSessions

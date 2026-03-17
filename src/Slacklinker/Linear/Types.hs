@@ -4,6 +4,7 @@ module Slacklinker.Linear.Types (
   LinearClientSecret (..),
   LinearCreds (..),
   LinearBearerToken (..),
+  LinearRefreshToken (..),
   LinearTicketUUID (..),
   LinearTicketId (..),
   linearTicketIdToText,
@@ -31,10 +32,17 @@ data LinearCreds = LinearCreds
 
 -- | Bearer token for the Linear API. This belongs to one Slacklinker tenant.
 newtype LinearBearerToken = LinearBearerToken {unLinearBearerToken :: Text}
-  deriving newtype (PersistField, PersistFieldSql)
+  deriving newtype (Eq, PersistField, PersistFieldSql)
 
 instance Show LinearBearerToken where
   show _ = "LinearBearerToken REDACTED"
+
+-- | Bearer token for the Linear API. This belongs to one Slacklinker tenant.
+newtype LinearRefreshToken = LinearRefreshToken {unLinearRefreshToken :: Text}
+  deriving newtype (PersistField, PersistFieldSql)
+
+instance Show LinearRefreshToken where
+  show _ = "LinearRefreshToken REDACTED"
 
 -- | Linear-side ticket UUID
 newtype LinearTicketUUID = LinearTicketUUID {unLinearTicketId :: UUID}
