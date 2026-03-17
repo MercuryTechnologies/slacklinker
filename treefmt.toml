@@ -1,0 +1,5 @@
+on-unmatched = "debug"
+
+[formatter.fourmolu]
+command = "run-fourmolu"
+includes = ["*.hs"]

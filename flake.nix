@@ -24,7 +24,11 @@
         let
           pkgs = import nixpkgs {
             inherit system;
-            overlays = [ self.overlays.default ];
+            overlays = [
+              (final: prev: { hsPkgs = pkgs.haskell.packages.${ghcVer}; })
+              self.overlays.packages-dir
+              self.overlays.default
+            ];
             config.allowBroken = true;
             config.allowUnfree = true;
           };
@@ -38,6 +42,10 @@
             slacklinker = pkgs.haskell.packages.${ghcVer}.slacklinker;
           };
 
+          legacyPackages = {
+            inherit pkgs;
+          };
+
           checks = {
             inherit (self.packages.${system}) slacklinker;
 
@@ -49,7 +57,7 @@
               # Maybe there is a better way to fix this?
               tools.fourmolu = pkgs.writeShellScriptBin "fourmolu" ''
                 ${lib.getExe hsPkgs.hpack}
-                ${lib.getExe hsPkgs.fourmolu} "$@"
+                ${lib.getExe pkgs.mercury.run-fourmolu} "$@"
               '';
               hooks = {
                 fourmolu.enable = true;
@@ -76,10 +84,12 @@
                 ngrok
                 sqlite
                 refinery-cli
+                treefmt
                 postgresql
                 pgformatter # executable is called pg_format
                 cabal2nix
                 process-compose
+                mercury.run-fourmolu
               ]);
               shellHook = self.checks.${system}.pre-commit-check.shellHook;
             };
@@ -88,6 +98,12 @@
     flake-utils.lib.eachDefaultSystem out // {
       # this stuff is *not* per-system
       overlays = {
+        packages-dir = final: prev: {
+          mercury = (prev.lib.packagesFromDirectoryRecursive {
+            inherit (prev) callPackage newScope;
+            directory = ./nix/packages;
+          });
+        };
         default = self: super:
         let inherit (self.haskell.lib) dontCheck doJailbreak packagesFromDirectory packageSourceOverrides;
         in {
