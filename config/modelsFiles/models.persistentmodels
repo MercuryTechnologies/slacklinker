@@ -177,9 +177,9 @@ LinearAPIAuthSession sql=linear_api_auth_sessions
   -- | Linear bearer token
   token LinearBearerToken
   -- | When the token expires.
-  -- FIXME(jadel): hm, these have no real refresh flow. But they also expire in
-  -- 10 years as of this writing (2025-03-03). Shrug!
   expiresAt UTCTime Maybe
+  -- | Refresh token for when the main token expires
+  refreshToken LinearRefreshToken Maybe
   -- FIXME(jadel): keep track of which scopes are on the token in question
   -- Made harder by hoauth2 API design: https://github.com/freizl/hoauth2/issues/253
 

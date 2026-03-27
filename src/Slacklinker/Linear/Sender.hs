@@ -7,14 +7,13 @@ import Data.GraphQL (get, getErrors)
 import Data.GraphQL.Error (GraphQLError (..))
 import Data.GraphQL.Monad (MonadGraphQLQuery (..))
 import Data.GraphQL.Result (getResult)
-import Database.Esqueleto.Experimental (Value (..))
 import Database.Persist qualified as P
 import Slacklinker.App (HasApp, runDB)
-import Slacklinker.Exceptions (LinearNotAuthenticated (..), SlacklinkerBug (..))
+import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
-import Slacklinker.Linear.DB (linearAuthSessionForWorkspace)
 import Slacklinker.Linear.GraphQL (runLinearGraphQL)
 import Slacklinker.Linear.GraphQL.API (LinkSlackMutation (..))
+import Slacklinker.Linear.Session (getToken)
 import Slacklinker.Linear.Types (LinearTicketId, linearTicketIdToText)
 import Slacklinker.Models (JoinedChannelId, KnownUserId, LinkedLinearTicket (..))
 import Slacklinker.Sender.Internal (runSlackEither)
@@ -79,7 +78,7 @@ instance Semigroup LinkResult where
   Duplicate <> Duplicate = Duplicate
 
 doBacklinkLinearTickets ::
-  (MonadIO m, HasApp m) =>
+  (MonadUnliftIO m, HasApp m) =>
   WorkspaceMeta ->
   SlackUrlParts ->
   JoinedChannelId ->
@@ -89,7 +88,7 @@ doBacklinkLinearTickets ::
 doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets = do
   -- The tickets have known linear teams, so we just have to link them.
   slackUrl <- buildSlackUrl slackUrlParts `orThrow` SlacklinkerBug "slack url not successfully reconstituted from a parsed one?!"
-  (Value linearOrgId, Value token) <- runDB $ linearAuthSessionForWorkspace workspaceInfo.workspaceId >>= (`orThrow` LinearNotAuthenticated)
+  (linearOrgId, token) <- getToken workspaceInfo.workspaceId
 
   linkingResults <- for tickets \ticket -> do
     -- This can fail (e.g. unknown ticket) and it is okay.

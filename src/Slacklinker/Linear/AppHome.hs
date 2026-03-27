@@ -7,6 +7,7 @@ import Database.Persist qualified as P
 import Slacklinker.App (App (..), AppConfig (..), HasApp (..), runDB)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.Import
+import Slacklinker.Linear.DB (linearAuthSessionForWorkspace)
 import Slacklinker.Linear.OAuth qualified as Linear
 import Slacklinker.Models (LinearOrganization (..), Unique (..), WorkspaceId)
 import URI.ByteString (serializeURIRef')
@@ -55,9 +56,14 @@ getLinearLinkState workspaceId = do
   case bitsMay of
     Nothing -> pure LinearUnavailable
     Just (host, creds) -> do
-      mLinearOrg <- runDB . P.getBy $ UniqueOneLinearOrganizationPerTenant workspaceId
-      case entityVal <$> mLinearOrg of
-        Just org -> pure $ LinearLinked org.displayName org.urlKey
+      -- Check for both org *and* auth session; if the session was deleted
+      -- (e.g. during a reset), we want to show the re-link button.
+      mLinearOrg <- runDB do
+        org <- P.getBy $ UniqueOneLinearOrganizationPerTenant workspaceId
+        session <- linearAuthSessionForWorkspace workspaceId
+        pure $ (,) <$> (entityVal <$> org) <*> session
+      case mLinearOrg of
+        Just (org, _) -> pure $ LinearLinked org.displayName org.urlKey
         Nothing -> do
           authUri <- Linear.makeAuthorizationURI host workspaceId creds
           LinearUnlinked

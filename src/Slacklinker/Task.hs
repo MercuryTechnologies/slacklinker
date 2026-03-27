@@ -4,12 +4,18 @@
 
 module Slacklinker.Task where
 
-import Data.Aeson (Value, camelTo2)
+import Data.Aeson (camelTo2)
+import Data.Aeson qualified as A
+import Database.Esqueleto.Experimental (Value (..))
 import Options.Generic
-import Slacklinker.App (App (..), AppM, appShutdownNoSender, appStartupNoSender, makeApp, runAppM, runDB)
+import Slacklinker.App (App (..), AppConfig (..), AppM, HasApp (..), appShutdownNoSender, appStartupNoSender, makeApp, runAppM, runDB)
+import Slacklinker.Exceptions (LinearDisabled (..))
 import Slacklinker.Import
+import Slacklinker.Linear.DB (linearAuthSessionsWithoutRefreshToken)
+import Slacklinker.Linear.Session (migrateOldToken, updateAuthSession)
 import Slacklinker.Linear.Teams (updateAllLinearTeamsCaches)
 import Slacklinker.Migrate.SuggestMigrations (suggestMigrations)
+import Slacklinker.Models (LinearAPIAuthSession (..))
 import Slacklinker.Settings
 
 instance ParseFields SlacklinkerSettingTag
@@ -30,6 +36,7 @@ data Task w
       , value :: w ::: ByteString
       }
   | UpdateAllLinearTeams
+  | MigrateLinearTokens
   deriving stock (Generic)
 
 kebabCaseModifier :: Modifiers
@@ -49,7 +56,7 @@ taskMain = do
 doSetSetting ::
   (MonadIO m) =>
   SlacklinkerSettingTag ->
-  Value ->
+  A.Value ->
   SqlPersistT m ()
 doSetSetting settingName value = do
   setting <- fromEither . mapLeft AesonDecodeError $ unmarshalSettingByTag settingName value
@@ -59,3 +66,13 @@ runTask :: Task Unwrapped -> AppM ()
 runTask (SuggestMigrations name dontFormat) = runDB $ suggestMigrations name dontFormat
 runTask (SetSetting settingName value) = runDB $ doSetSetting settingName =<< decodeThrow value
 runTask UpdateAllLinearTeams = updateAllLinearTeamsCaches
+runTask MigrateLinearTokens = do
+  linearCreds <- getsApp (.config.linearCreds) >>= (`orThrow` LinearDisabled)
+  manager <- getsApp (.manager)
+  sessions <- runDB linearAuthSessionsWithoutRefreshToken
+  for_ sessions \(Value linearOrgId, Entity _ session) -> do
+    logInfo $ "Migrating token for org " <> tshow linearOrgId
+    tokenResponse <- liftIO $ migrateOldToken manager linearCreds session.token
+    now <- liftIO getCurrentTime
+    runDB $ updateAuthSession now linearOrgId tokenResponse
+    logInfo $ "Migrated token for org " <> tshow linearOrgId

@@ -13,6 +13,7 @@ let
   # to be true. So just nuke it. w/e.
   badReferences = [
     hself.hs-opentelemetry-sdk
+    hself.hs-opentelemetry-api
     hself.warp
   ];
 
