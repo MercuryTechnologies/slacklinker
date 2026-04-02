@@ -17,7 +17,6 @@ import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
-import OpenTelemetry.Trace (addAttribute)
 import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
@@ -253,7 +252,8 @@ handleTodo r =
               , messageContent = "Done!"
               , workspaceMeta = workspaceInfo
               }
-        BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets ->
+        BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets -> do
+          addWorkspaceInfo span workspaceInfo
           doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
         RequestTerminate -> throwIO Terminate
   where

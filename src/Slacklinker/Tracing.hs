@@ -1,6 +1,8 @@
 module Slacklinker.Tracing (
   inSpan,
   inSpan',
+  addAttribute,
+  addAttributes,
   OTel.defaultSpanArguments,
   withGlobalTracing,
   withCurrentSpan,
@@ -12,9 +14,10 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Scientific qualified as Scientific
 import Data.Vector qualified as Vector
-import OpenTelemetry.Attributes
+import OpenTelemetry.Attributes (Attribute, ToAttribute (..))
 import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as Context
+import OpenTelemetry.Trace (addAttribute, addAttributes)
 import OpenTelemetry.Trace qualified as OTel
 import Slacklinker.Prelude hiding (traceId)
 
