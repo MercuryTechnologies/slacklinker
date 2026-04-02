@@ -1,7 +1,6 @@
 module Slacklinker.Handler.Webhook.ImCommand where
 
 import Data.Text qualified as T
-import OpenTelemetry.Trace (addAttribute)
 import Slacklinker.Import
 import Slacklinker.Sender
 import Web.Slack.Conversation (ConversationId)

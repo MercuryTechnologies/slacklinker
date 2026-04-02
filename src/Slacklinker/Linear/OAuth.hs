@@ -12,13 +12,14 @@ import Data.Set qualified as Set
 import Data.Time (addUTCTime, secondsToNominalDiffTime)
 import Database.Persist qualified as P
 import Network.HTTP.Client (Manager)
-import Network.OAuth.OAuth2 (ExchangeToken (..), OAuth2Token, RefreshToken (..))
+import Network.OAuth.OAuth2 (ExchangeToken (..), OAuth2Token (..), RefreshToken (..))
+import Network.OAuth.OAuth2.TokenRequest (TokenResponseError (..))
 import Network.OAuth2.Experiment qualified as HOAuth2
 import Slacklinker.App (HasApp (..), runDB)
 import Slacklinker.Exceptions (LinearOAuth2Error (..))
+import Slacklinker.Import
 import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..), LinearRefreshToken (..))
 import Slacklinker.Models (EntityField (..), LinearNonce (..), Unique (..), WorkspaceId)
-import Slacklinker.Prelude
 import URI.ByteString (Absolute, Authority (..), Host (..), Scheme (..), URIRef (..))
 import URI.ByteString.QQ
 
@@ -105,7 +106,7 @@ makeAuthorizationCodeApp httpHost workspaceId creds = do
         acAuthorizeRequestExtraParams =
           Map.fromList
             [ -- Application should act as itself, not as a user
-              ("actor", "application")
+              ("actor", "app")
             ]
       , -- XXX(jadel): This is not actually sent in the form as specified in the
         -- Linear API spec due to a bug in hoauth2. It is instead sent in the
@@ -138,9 +139,24 @@ makeAuthorizationURI httpHost workspaceId creds =
   HOAuth2.mkAuthorizationRequest . HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost workspaceId creds
 
 -- | Uses the refresh token to get a new session.
-refreshSession :: (HasApp m, MonadIO m) => Text -> WorkspaceId -> LinearCreds -> Manager -> LinearRefreshToken -> m OAuth2Token
-refreshSession httpHost workspaceId creds manager token = do
+refreshSession :: (HasApp m, MonadUnliftIO m) => Text -> WorkspaceId -> LinearCreds -> Manager -> LinearRefreshToken -> m OAuth2Token
+refreshSession httpHost workspaceId creds manager token = inSpan' "linear token refresh" defaultSpanArguments \span -> do
   logInfo $ "Refresh Linear API session for workspace" <> tshow workspaceId
   idpApp <- HOAuth2.IdpApplication linearIdP <$> makeAuthorizationCodeApp httpHost workspaceId creds
   resp <- runExceptT $ HOAuth2.conduitRefreshTokenRequest idpApp manager (RefreshToken token.unLinearRefreshToken)
-  fromEither . mapLeft (LinearOAuth2Error . tshow) $ resp
+
+  now <- liftIO getCurrentTime
+  case resp of
+    Right inner -> do
+      logInfo $ "Successfully refreshed Linear API session for workspace " <> tshow workspaceId <> " expires in: " <> tshow inner.expiresIn
+      for_ inner.expiresIn \t -> do
+        let expiresAt = (`addUTCTime` now) . secondsToNominalDiffTime . fromIntegral $ t
+        addAttribute span "linear.oauth.token.expires_at" (tshow expiresAt)
+      addAttribute span "linear.oauth.token.token_type" (fromMaybe "?" inner.tokenType)
+      pure inner
+    Left err -> do
+      logInfo $ "Error refreshing Linear API token for " <> tshow workspaceId <> ": " <> tshow err
+      addAttribute span "linear.oauth.token.error" $ tshow err.tokenResponseError
+      addAttribute span "linear.oauth.token.error.description" $ fromMaybe "" err.tokenResponseErrorDescription
+      addAttribute span "linear.oauth.token.error.uri" . fromMaybe "" $ fmap tshow err.tokenResponseErrorUri
+      throwIO . LinearOAuth2Error . tshow $ err

@@ -16,7 +16,7 @@ import Data.HashMap.Strict qualified as HashMap
 import Data.List (nub)
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
-import OpenTelemetry.Trace.Core (Attribute, Span, ToAttribute (toAttribute), addAttribute, addAttributes)
+import OpenTelemetry.Trace.Core (Attribute, Span, ToAttribute (toAttribute))
 import Slacklinker.App
 import Slacklinker.Exceptions
 import Slacklinker.Extract.FreeText (extractLinksFromJson)

@@ -33,7 +33,7 @@ updateAuthSession now linearOrgId tokenResponse = do
       (LinearAPIAuthSession {linearOrganizationId = linearOrgId, token, expiresAt, refreshToken})
       [LinearAPIAuthSessionToken P.=. token, LinearAPIAuthSessionExpiresAt P.=. expiresAt, LinearAPIAuthSessionRefreshToken P.=. refreshToken]
 
-realRefreshToken :: (MonadIO m, HasApp m) => WorkspaceId -> LinearRefreshToken -> m OAuth2Token
+realRefreshToken :: (MonadUnliftIO m, HasApp m) => WorkspaceId -> LinearRefreshToken -> m OAuth2Token
 realRefreshToken workspaceId refreshToken = do
   mgr <- getsApp (.manager)
   httpHost <- getsApp (.config.slacklinkerHost) >>= (`orThrow` LinearDisabled)
@@ -51,32 +51,37 @@ getToken' ::
   WorkspaceId ->
   m (LinearOrganizationId, LinearBearerToken)
 getToken' refresher workspaceId = do
-  withRunInIO \runInIO -> runInIO $ runDB do
-    (_, Entity sessionId_ _) <-
-      linearAuthSessionForWorkspace workspaceId
-        >>= (`orThrow` LinearNotAuthenticated)
-    lockLinearAuthSession sessionId_
+  inSpan' "linear getToken'" defaultSpanArguments \span -> do
+    withRunInIO \runInIO -> runInIO $ runDB do
+      (_, Entity sessionId_ _) <-
+        linearAuthSessionForWorkspace workspaceId
+          >>= (`orThrow` LinearNotAuthenticated)
+      lockLinearAuthSession sessionId_
 
-    -- Once we lock the row, we have to re-fetch it to make sure we definitely
-    -- got the copy from the last time it was unlocked.
-    (Value linearOrgId, Entity sessionId session) <-
-      linearAuthSessionForWorkspace workspaceId
-        >>= (`orThrow` LinearNotAuthenticated)
+      -- Once we lock the row, we have to re-fetch it to make sure we definitely
+      -- got the copy from the last time it was unlocked.
+      (Value linearOrgId, Entity sessionId session) <-
+        linearAuthSessionForWorkspace workspaceId
+          >>= (`orThrow` LinearNotAuthenticated)
 
-    unless (sessionId_ == sessionId) $ throwIO LinearRaced
+      unless (sessionId_ == sessionId) $ throwIO LinearRaced
 
-    now <- liftIO getCurrentTime
-    let expiry = fromMaybe (posixSecondsToUTCTime 0) session.expiresAt
-    if (now > (-thirtyMinutes) `addUTCTime` expiry)
-      then do
-        -- The failure case here is actually impossible: old Linear sessions have
-        -- 10y in the future expiry.
-        refreshToken <- session.refreshToken `orThrow` LinearNotAuthenticated
-        newToken <- liftIO $ runInIO $ refresher workspaceId refreshToken
-        updateAuthSession now linearOrgId newToken
+      now <- liftIO getCurrentTime
+      let expiry = fromMaybe (posixSecondsToUTCTime 0) session.expiresAt
+      let shouldRefresh = now > (-thirtyMinutes) `addUTCTime` expiry
+      addAttribute span "linear.oauth.refreshing" shouldRefresh
+      addAttribute span "linear.oauth.current_expires_at" (tshow expiry)
 
-        pure (linearOrgId, LinearBearerToken newToken.accessToken.atoken)
-      else pure (linearOrgId, session.token)
+      if shouldRefresh
+        then do
+          -- The failure case here is actually impossible: old Linear sessions have
+          -- 10y in the future expiry.
+          refreshToken <- session.refreshToken `orThrow` LinearNotAuthenticated
+          newToken <- liftIO $ runInIO $ refresher workspaceId refreshToken
+          updateAuthSession now linearOrgId newToken
+
+          pure (linearOrgId, LinearBearerToken newToken.accessToken.atoken)
+        else pure (linearOrgId, session.token)
   where
     -- Arbitrarily chosen threshold: session tokens live for 24h.
     thirtyMinutes = secondsToNominalDiffTime $ 30 * 60
