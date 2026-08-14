@@ -115,6 +115,15 @@ Slacklinker's own app id here.
 
 - `BLOCKED_APP_IDS=appid1,appid2`
 
+Slacklinker normally extracts only structured rich-text links. Extract links
+from Block Kit section text and fields in these comma-separated channel IDs:
+
+- `SECTION_LINK_CHANNEL_IDS=C0123456789,C9876543210`
+
+This setting defaults to no channels. Keep it narrowly scoped: automated apps
+commonly use section blocks, so enabling section extraction broadly can create
+noisy or unexpected backlinks.
+
 ### Linear setup
 
 Linear integration is optional and is not visible if not configured.

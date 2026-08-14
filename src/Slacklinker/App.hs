@@ -32,6 +32,7 @@ import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), L
 import Slacklinker.Types (SlackClientSecret (..), SlackToken (..))
 import System.Environment (getEnv, lookupEnv)
 import Web.Slack (SlackConfig (..))
+import Web.Slack.Conversation (ConversationId (..))
 import Web.Slack.Experimental.RequestVerification (SlackSigningSecret (..))
 
 data AppConfig = AppConfig
@@ -57,6 +58,9 @@ data AppConfig = AppConfig
   , blockedAppIds :: [Text]
   {- ^ do not backlink to posts from these apps
   used to prevent infinite loops
+  -}
+  , sectionLinkChannelIds :: [ConversationId]
+  {- ^ channels where links should also be extracted from Block Kit section blocks
   -}
   }
   deriving stock (Show)
@@ -162,6 +166,8 @@ getConfiguration = do
   logLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_LEVEL"
   sqlLogLevel <- maybe LevelInfo readLogLevel <$> lookupEnv "LOG_SQL"
   blockedAppIds <- fmap (splitOn "," . decodeUtf8) (BS.pack <$> getEnv "BLOCKED_APP_IDS")
+  sectionLinkChannelIds <-
+    maybe [] (map ConversationId . splitOn "," . pack) <$> lookupEnv "SECTION_LINK_CHANNEL_IDS"
 
   pure AppConfig {..}
   where

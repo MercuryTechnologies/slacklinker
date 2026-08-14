@@ -30,6 +30,7 @@ testAppConfig postgresConnectionString =
     , sqlLogLevel = LevelInfo
     , logLevel = LevelInfo
     , blockedAppIds = []
+    , sectionLinkChannelIds = []
     , linearCreds = Nothing
     , slacklinkerHost = Nothing
     }

@@ -1,7 +1,7 @@
 module Slacklinker.Handler.WebhookSpec (spec) where
 
 import Database.Persist
-import Slacklinker.App (HasApp, runAppM, runDB)
+import Slacklinker.App (App (..), AppConfig (..), HasApp, runAppM, runDB)
 import Slacklinker.Handler.TestData
 import Slacklinker.Handler.TestUtils
 import Slacklinker.Handler.Webhook (handleMessage)
@@ -73,6 +73,29 @@ spec = do
           theLink.messageTs `shouldBe` msg.ts
           theLink.threadTs `shouldBe` Nothing
           theLink.sent `shouldBe` False
+
+    it "extracts a link from a section block in a configured channel" \app -> do
+      let (url, parts) = sampleUrl
+          sectionText = "> <" <> url <> ">"
+          msg = messageEventWithBlocks ts1 [SlackBlockSection . slackSectionWithText $ message sectionText]
+          scopedApp = app {config = app.config {sectionLinkChannelIds = [msg.channel]}}
+      runAppM scopedApp do
+        (wsId, teamId) <- createWorkspace
+        handleMessage msg teamId
+
+        Just _ <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
+        pure ()
+
+    it "ignores section-block links outside configured channels" \app -> do
+      runAppM app do
+        (wsId, teamId) <- createWorkspace
+        let (url, parts) = sampleUrl
+            sectionText = "> <" <> url <> ">"
+            msg = messageEventWithBlocks ts1 [SlackBlockSection . slackSectionWithText $ message sectionText]
+        handleMessage msg teamId
+
+        Nothing <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
+        pure ()
 
     it "can deal with a forwarded url" \app -> do
       runAppM app $ do

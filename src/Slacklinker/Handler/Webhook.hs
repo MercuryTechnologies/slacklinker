@@ -19,7 +19,7 @@ import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Attribute, Span, ToAttribute (toAttribute))
 import Slacklinker.App
 import Slacklinker.Exceptions
-import Slacklinker.Extract.FreeText (extractLinksFromJson)
+import Slacklinker.Extract.FreeText (extractLinksFromJson, extractUrls)
 import Slacklinker.Extract.Types
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
@@ -46,6 +46,13 @@ extractBlockLinks = fromBlock
 
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
     fromRichItem _ = []
+
+extractSectionBlockLinks :: Text -> SlackBlock -> [Text]
+extractSectionBlockLinks slackSubdomain (SlackBlockSection section) =
+  mconcat $ extractUrls slackSubdomain <$> (sectionTexts >>= unSlackTexts)
+  where
+    sectionTexts = maybeToList section.slackSectionText <> fromMaybe [] section.slackSectionFields
+extractSectionBlockLinks _ _ = []
 
 extractAttachedLinks :: DecodedMessageAttachment -> [Text]
 extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
@@ -145,7 +152,12 @@ handleMessage msg teamId = do
       let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
           attachedLinks = mconcat $ extractAttachedLinks <$> mapMaybe decoded (fromMaybe [] ev.attachments)
           rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
-          links = nub $ blockLinks <> attachedLinks <> rawLinks
+      sectionLinkChannelIds <- getsApp (.config.sectionLinkChannelIds)
+      let sectionLinks =
+            if ev.channel `elem` sectionLinkChannelIds
+              then mconcat $ extractSectionBlockLinks workspace.slackSubdomain <$> fromMaybe [] ev.blocks
+              else []
+          links = nub $ blockLinks <> attachedLinks <> rawLinks <> sectionLinks
 
       -- FIXME(evanr): The only IO these `record*` functions perform
       -- currently is database inserts, so I think they can/should be run in
