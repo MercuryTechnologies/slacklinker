@@ -11,6 +11,26 @@ module Slacklinker.SemConv where
 
 import Slacklinker.Prelude (Text)
 
+{- | Declared Haskell exception type as module.name on failed operations, without
+service wrappers, type arguments, package versions or payloads. Absent on expected
+outcomes and successes. Moving or renaming a type changes its telemetry label.
+-}
+slacklinkerErrorKind :: Text
+slacklinkerErrorKind = "slacklinker.error.kind"
+
+{- | Structured domain reason supplementing the exception type. Currently the
+inner SlackVerificationFailed constructor name, without payloads. Absent when no
+reason is available, and on expected outcomes and successful operations.
+-}
+slacklinkerErrorReason :: Text
+slacklinkerErrorReason = "slacklinker.error.reason"
+
+{- | Boundary owning a failure: http.request or sender.job. Absent on spans
+without an explicit boundary, and on expected outcomes and successes.
+-}
+slacklinkerErrorSite :: Text
+slacklinkerErrorSite = "slacklinker.error.site"
+
 -- | Slack workspace ID associated with the operation.
 slackTeamId :: Text
 slackTeamId = "slack.team.id"

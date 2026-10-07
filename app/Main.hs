@@ -40,7 +40,7 @@ main = do
       let app = app_ {runtimeInfo = rti}
       let waiApp_ = application app
       otelMiddleware <- newOpenTelemetryWaiMiddleware
-      let waiApp = errorMiddleware . otelMiddleware $ waiApp_
+      let waiApp = otelMiddleware . errorMiddleware $ waiApp_
 
       let settings = defaultSettings & setHost "127.0.0.1" & setPort 4040
       putStrLn "Startup! Listening on 127.0.0.1:4040"

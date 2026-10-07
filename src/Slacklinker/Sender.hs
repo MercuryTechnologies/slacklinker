@@ -9,17 +9,14 @@ module Slacklinker.Sender (
   senderThread,
 ) where
 
-import Data.HashMap.Strict qualified as HM
 import Data.Text (splitOn)
 import Data.Vector qualified as V
 import Database.Esqueleto.Experimental qualified as E
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
-import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
-import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
-import Slacklinker.Exceptions (SlacklinkerBug (..))
+import Slacklinker.Exceptions (ErrorSite (SenderJob), SlacklinkerBug (..))
 import Slacklinker.Import
 import Slacklinker.Linear.Sender (doBacklinkLinearTickets)
 import Slacklinker.Linear.Teams (updateLinearTeamsCache)
@@ -48,8 +45,7 @@ senderHandler loc e = do
       putStrLn $ loc <> ": Sender terminate"
       throwIO e
     Nothing -> do
-      mspan <- OTel.lookupSpan <$> OTel.getContext
-      for_ mspan $ \span -> OTel.recordException span HM.empty Nothing e
+      -- The job span has already recorded and classified the exception.
       -- unexpected exception, log it
       putStrLn $ loc <> ": SENDER EXC: " <> pack (displayException e)
 
@@ -224,7 +220,7 @@ doUpdateReply r = do
 handleTodo :: SenderRequest -> AppM ()
 handleTodo r =
   let conName = conNameOf r
-   in inSpan' (cs conName) defaultSpanArguments \span -> case r of
+   in inSpanAt SenderJob (cs conName) defaultSpanArguments \span -> case r of
         SendMessage req -> do
           addAttribute span SemConv.slackChannel req.channel.unConversationId
           doSendMessage req

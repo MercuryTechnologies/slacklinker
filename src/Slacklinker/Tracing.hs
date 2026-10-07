@@ -1,6 +1,8 @@
 module Slacklinker.Tracing (
   inSpan,
   inSpan',
+  inSpanAt,
+  inSpanWithTracer,
   addAttribute,
   addAttributes,
   OTel.defaultSpanArguments,
@@ -19,6 +21,7 @@ import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as Context
 import OpenTelemetry.Trace (addAttribute, addAttributes)
 import OpenTelemetry.Trace qualified as OTel
+import Slacklinker.Exceptions (ErrorSite, ExceptionClassification (..), annotateError, classifyException)
 import Slacklinker.Prelude hiding (traceId)
 
 getTracer :: (MonadIO m) => m OTel.Tracer
@@ -27,14 +30,30 @@ getTracer = do
   pure $ OTel.makeTracer tp "slacklinker" OTel.tracerOptions
 
 inSpan :: (MonadUnliftIO m) => Text -> OTel.SpanArguments -> m b -> m b
-inSpan name args act = do
-  tracer <- getTracer
-  OTel.inSpan tracer name args act
+inSpan name args act = inSpan' name args $ const act
 
 inSpan' :: (MonadUnliftIO m) => Text -> OTel.SpanArguments -> (OTel.Span -> m b) -> m b
 inSpan' name args act = do
   tracer <- getTracer
-  OTel.inSpan' tracer name args act
+  inSpanWithTracer tracer Nothing name args act
+
+inSpanAt :: (MonadUnliftIO m) => ErrorSite -> Text -> OTel.SpanArguments -> (OTel.Span -> m b) -> m b
+inSpanAt site name args act = do
+  tracer <- getTracer
+  inSpanWithTracer tracer (Just site) name args act
+
+{- | Annotate before the SDK records the exception and ends the owning span.
+Expected outcomes leave the SDK normally, then resume unwinding outside the span.
+-}
+inSpanWithTracer :: (MonadUnliftIO m) => OTel.Tracer -> Maybe ErrorSite -> Text -> OTel.SpanArguments -> (OTel.Span -> m b) -> m b
+inSpanWithTracer tracer site name args act = do
+  result <- OTel.inSpan' tracer name args $ \span ->
+    (Right <$> act span) `catch` \e -> case classifyException e of
+      ExpectedOutcome -> pure $ Left e
+      Failed kind reason -> do
+        annotateError span site kind reason
+        throwIO e
+  either throwIO pure result
 
 withCurrentSpan :: (MonadIO m) => (OTel.Span -> m ()) -> m ()
 withCurrentSpan act = do
