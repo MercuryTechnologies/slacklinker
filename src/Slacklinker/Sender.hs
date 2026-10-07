@@ -251,7 +251,7 @@ handleTodo r =
               }
         BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets -> do
           addWorkspaceInfo span workspaceInfo
-          doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
+          doBacklinkLinearTickets span workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span workspaceInfo = addAttribute span SemConv.slackTeamId workspaceInfo.slackTeamId.unTeamId
