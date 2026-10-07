@@ -52,7 +52,7 @@ dependencies:
   - servant-client
   - servant-client-core
   - servant-server
-  - slack-web >= 2.1.0.0
+  - slack-web >= 2.3.0.0
   - stm
   - string-conversions
   - string-variants

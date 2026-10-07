@@ -41,8 +41,13 @@ extractBlockLinks = fromBlock
     fromBlock _ = []
 
     fromRichText rt = mconcat $ fromRichSectionItem <$> rt.elements
-    fromRichSectionItem (RichTextSectionItemRichText rt) = mconcat $ fromRichItem <$> rt
+    fromRichSectionItem (RichTextSectionItemRichText section) = fromRichSection section
+    fromRichSectionItem (RichTextSectionItemList sections) = concatMap fromRichSection sections
+    fromRichSectionItem (RichTextSectionItemQuote items) = concatMap fromRichItem items
+    fromRichSectionItem (RichTextSectionItemPreformatted items) = concatMap fromRichItem items
     fromRichSectionItem _ = []
+
+    fromRichSection (RichTextSection items) = concatMap fromRichItem items
 
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
     fromRichItem _ = []
@@ -199,6 +204,17 @@ addEventAttributes event teamId span = do
       addAttribute span "slack.event.type" ("message" :: Text)
       addAttribute span "slack.event.subtype" ("message_changed" :: Text)
       pure ()
+    EventMessageDeleted ev -> do
+      addAttribute span "slack.event.type" ("message" :: Text)
+      addAttribute span "slack.event.subtype" ("message_deleted" :: Text)
+      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+      addAttribute span "slack.event.deletedTs" ev.deletedTs
+    EventChannelShared ev -> do
+      addAttribute span "slack.event.type" ("channel_shared" :: Text)
+      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+    EventChannelUnshared ev -> do
+      addAttribute span "slack.event.type" ("channel_unshared" :: Text)
+      addAttribute span "slack.conversation.id" ev.channel.unConversationId
     EventChannelJoinMessage -> do
       addAttribute span "slack.event.type" ("message" :: Text)
       addAttribute span "slack.event.subtype" ("channel_join" :: Text)
@@ -297,6 +313,9 @@ handleCallback event teamId = case event of
 
   -- No-op events
   EventMessageChanged -> pure ()
+  EventMessageDeleted _ -> pure ()
+  EventChannelShared _ -> pure ()
+  EventChannelUnshared _ -> pure ()
   EventChannelJoinMessage -> pure ()
   -- Log unknown events
   EventUnknown v -> logDebug $ "unknown webhook callback: " <> tshow v
