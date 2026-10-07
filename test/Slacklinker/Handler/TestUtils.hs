@@ -24,21 +24,22 @@ urlRichText url =
     { blockId = Nothing
     , elements =
         [ RichTextSectionItemRichText
-            [ RichItemLink
-                ( RichLinkAttrs
-                    { style = RichStyle {rsBold = False, rsItalic = False}
-                    , url
-                    , text = Nothing
-                    }
-                )
-            ]
+            $ RichTextSection
+              [ RichItemLink
+                  ( RichLinkAttrs
+                      { style = RichStyle {rsBold = False, rsItalic = False}
+                      , url
+                      , text = Nothing
+                      }
+                  )
+              ]
         ]
     }
 
 richTextToMaybeUrl :: RichText -> Maybe Text
 richTextToMaybeUrl rt = listToMaybe $ concatMap fromRichSectionItem rt.elements
   where
-    fromRichSectionItem (RichTextSectionItemRichText items) = concatMap fromRichItem items
+    fromRichSectionItem (RichTextSectionItemRichText (RichTextSection items)) = concatMap fromRichItem items
     fromRichSectionItem _ = []
 
     fromRichItem (RichItemLink attrs) = [url attrs]

@@ -74,6 +74,25 @@ spec = do
           theLink.threadTs `shouldBe` Nothing
           theLink.sent `shouldBe` False
 
+    forM_
+      [ ("list", RichTextSectionItemList . pure . RichTextSection)
+      , ("quote", RichTextSectionItemQuote)
+      , ("preformatted block", RichTextSectionItemPreformatted)
+      ]
+      \(name, container) ->
+        it ("can find a link in a rich-text " <> name) \app -> do
+          runAppM app do
+            (wsId, teamId) <- createWorkspace
+            let (url, parts) = sampleUrl
+                RichText {elements = [RichTextSectionItemRichText (RichTextSection items)]} = urlRichText url
+                block = SlackBlockRichText $ RichText {blockId = Nothing, elements = [container items]}
+                msg = messageEventWithBlocks ts1 [block]
+            handleMessage msg teamId
+
+            Just (Entity rtId _) <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
+            links <- runDB $ selectList [LinkedMessageRepliedThreadId ==. rtId] []
+            liftIO $ map ((.messageTs) . entityVal) links `shouldBe` [msg.ts]
+
     it "can deal with a forwarded url" \app -> do
       runAppM app $ do
         (wsId, teamId) <- createWorkspace

@@ -70,7 +70,7 @@ forwardedMessageEvent =
                                           [ SlackBlockRichText
                                               ( RichText
                                                   { blockId = Just (unsafeMkNonEmptyText "/dNUU")
-                                                  , elements = [RichTextSectionItemRichText [RichItemText "this message was forwarded" (RichStyle {rsBold = False, rsItalic = False})]]
+                                                  , elements = [RichTextSectionItemRichText (RichTextSection [RichItemText "this message was forwarded" (RichStyle {rsBold = False, rsItalic = False})])]
                                                   }
                                               )
                                           ]
