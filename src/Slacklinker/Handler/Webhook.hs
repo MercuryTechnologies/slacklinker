@@ -64,6 +64,21 @@ extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [Text]
     extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
 
+-- | A thread identity, used for ignoring links between messages in the same
+-- thread.
+data ThreadReference = ThreadReference
+  { channelId :: ConversationId
+  , threadTs :: Text
+  }
+  deriving stock (Eq)
+
+referencedThread :: SlackUrlParts -> ThreadReference
+referencedThread parts =
+  ThreadReference
+    { channelId = parts.channelId
+    , threadTs = fromMaybe parts.messageTs parts.threadTs
+    }
+
 data MessageDestination = MessageDestination
   { replyToTs :: Maybe Text
   , channel :: ConversationId
@@ -81,7 +96,8 @@ recordLink ::
   SlackUrlParts ->
   m (Maybe RepliedThreadId)
 recordLink workspaceId userId joinedChannelId linkSource linkDestination = do
-  if isInSameThread linkSource linkDestination
+  let destinationThread = referencedThread linkDestination
+  if referencedThread linkSource == destinationThread
     then pure Nothing
     else do
       runDB $ do
@@ -91,15 +107,12 @@ recordLink workspaceId userId joinedChannelId linkSource linkDestination = do
               { workspaceId
               , replyTs = Nothing
               , -- Destination of the link
-                conversationId = linkDestination.channelId
+                conversationId = destinationThread.channelId
               , -- If a link is to a message in a thread, the message we're
                 -- going to reply to is the thread parent. If it's a standalone
                 -- message, it's the message itself. This deduplicates our
                 -- replies between messages within the same thread.
-                threadTs =
-                  fromMaybe
-                    linkDestination.messageTs
-                    linkDestination.threadTs
+                threadTs = destinationThread.threadTs
               }
         let repliedThreadId = either entityKey identity repliedThreadId_
 
@@ -117,22 +130,6 @@ recordLink workspaceId userId joinedChannelId linkSource linkDestination = do
               , sent = False
               }
         pure $ Just repliedThreadId
-  where
-    isJustAndEqual a b = fromMaybe False (liftM2 (==) a b)
-    isInSameThread link1 link2 =
-      link1.channelId
-        == link2.channelId
-        && (
-             -- link2 is the thread parent of link1
-             link1.threadTs
-               == Just link2.messageTs
-               ||
-               -- link1 is the thread parent of link2
-               link2.threadTs
-               == Just link1.messageTs
-               -- both are children of the same thread
-               || (link1.threadTs `isJustAndEqual` link2.threadTs)
-           )
 
 recordUser :: (HasApp m, MonadIO m) => WorkspaceId -> Slack.UserId -> m KnownUserId
 recordUser workspaceId slackUserId = do
