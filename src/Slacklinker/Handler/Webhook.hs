@@ -13,6 +13,7 @@ import Control.Monad.Extra (mapMaybeM)
 import Data.Aeson (Result (..), Value (Object), decodeStrict, (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Data.HashMap.Strict qualified as HashMap
+import Data.List (nubBy)
 import Data.Map.Strict qualified as Map
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
@@ -77,13 +78,18 @@ extractAttachedLinks workspaceName attachment = fromUrlLinks ++ blockLinks
 -- If two items have the same URL but one is missing a `threadTs`, drop the one
 -- without the `threadTs`.
 mergeLinkDestinations :: [SlackUrlParts] -> [SlackUrlParts]
-mergeLinkDestinations = Map.elems . Map.fromListWith preferThread . map keyed
+mergeLinkDestinations =
+    -- Deduplicate threads.
+    nubBy sameThread
+    -- Deduplicate messages.
+    . Map.elems . Map.fromListWith preferThread . map keyed
   where
     -- Here we extract a sense of 'message identity', intentionally ignoring
     -- the `threadTs` field.
     keyed destination = ((destination.workspaceName, destination.channelId, destination.messageTs), destination)
     -- We have `<>` at home.
     preferThread incoming existing = if isJust incoming.threadTs then incoming else existing
+    sameThread a b = referencedThread a == referencedThread b
 
 -- | A thread identity, used for ignoring links between messages in the same
 -- thread.
