@@ -1,5 +1,8 @@
 module Slacklinker.Handler.WebhookSpec (spec) where
 
+import Control.Monad (MonadFail)
+import Data.Aeson (Value, eitherDecode, encode, object, (.=))
+import Data.Aeson.Types (Pair)
 import Database.Persist
 import Slacklinker.App (HasApp, runAppM, runDB)
 import Slacklinker.Handler.TestData
@@ -25,6 +28,52 @@ doBotLink teamId ts url = do
   let msg = botMessageEventWithBlocks ts [SlackBlockRichText . urlRichText $ url]
   handleMessage msg teamId
   pure msg
+
+decodeMention :: Value -> MessageEvent
+decodeMention mentionItem =
+  case eitherDecode @MessageEvent (encode payload) of
+    Left err -> error err
+    Right msg -> msg
+  where
+    payload =
+      object
+        [ "blocks" .= [richTextBlock]
+        , "channel" .= ("C043YJGBY49" :: Text)
+        , "text" .= ("nobody looks at this" :: Text)
+        , "channel_type" .= ("channel" :: Text)
+        , "user" .= ("U043H11ES4V" :: Text)
+        , "ts" .= ts1
+        ]
+    richTextBlock =
+      object
+        [ "type" .= ("rich_text" :: Text)
+        , "elements" .= [section]
+        ]
+    section =
+      object
+        [ "type" .= ("rich_text_section" :: Text)
+        , "elements" .= [mentionItem]
+        ]
+
+mention :: [Pair] -> Value
+mention fields = object (("type" .= ("message_mention" :: Text)) : fields)
+
+expectRecordedLink ::
+  (HasApp m, MonadUnliftIO m, MonadFail m) =>
+  WorkspaceId ->
+  MessageEvent ->
+  SlackUrlParts ->
+  m ()
+expectRecordedLink wsId msg parts = do
+  let replyTs = fromMaybe parts.messageTs parts.threadTs
+  Just (Entity rtId _thread) <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId replyTs
+  [Entity _ theLink] <- runDB $ selectList [LinkedMessageRepliedThreadId ==. rtId] []
+  Just (Entity joinedChannelId _) <- runDB $ getBy $ UniqueJoinedChannel wsId msg.channel
+  liftIO $ do
+    theLink.joinedChannelId `shouldBe` joinedChannelId
+    theLink.messageTs `shouldBe` msg.ts
+    theLink.threadTs `shouldBe` Nothing
+    theLink.sent `shouldBe` False
 
 spec :: Spec
 spec = do
@@ -55,6 +104,72 @@ spec = do
           theLink.messageTs `shouldBe` msg.ts
           theLink.threadTs `shouldBe` Nothing
           theLink.sent `shouldBe` False
+
+    it "records a message mention url, including its thread" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let (url, parts) = sampleUrlToChild
+            msg = decodeMention $ mention ["url" .= url]
+        handleMessage msg teamId
+        expectRecordedLink wsId msg parts
+
+    it "records a message mention from its channel and timestamp" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let (_, parts) = sampleUrl
+            msg =
+              decodeMention
+                $ mention
+                  [ "channel_id" .= parts.channelId.unConversationId
+                  , "message_ts" .= parts.messageTs
+                  ]
+        handleMessage msg teamId
+        expectRecordedLink wsId msg parts
+
+    it "records a message mention thread on the parent timestamp" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let (_, parts) = sampleUrlToChild
+            msg =
+              decodeMention
+                $ mention
+                  [ "channel_id" .= parts.channelId.unConversationId
+                  , "message_ts" .= parts.messageTs
+                  , "thread_ts" .= fromJust parts.threadTs
+                  ]
+        handleMessage msg teamId
+        expectRecordedLink wsId msg parts
+
+    it "records a message mention when thread_ts is not a Slack timestamp" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let (_, parts) = sampleUrl
+            msg =
+              decodeMention
+                $ mention
+                  [ "channel_id" .= parts.channelId.unConversationId
+                  , "message_ts" .= parts.messageTs
+                  , "thread_ts" .= ("not-a-ts" :: Text)
+                  ]
+        handleMessage msg teamId
+        expectRecordedLink wsId msg parts
+
+    it "does not record a message mention with an invalid message_ts" \app -> do
+      runAppM app $ do
+        (wsId, teamId) <- createWorkspace
+        let (_, parts) = sampleUrl
+            msg =
+              decodeMention
+                $ mention
+                  [ "channel_id" .= parts.channelId.unConversationId
+                  , "message_ts" .= ("nope" :: Text)
+                  ]
+        handleMessage msg teamId
+        threads <- runDB $ selectList @RepliedThread [RepliedThreadWorkspaceId ==. wsId] []
+        links <- runDB $ selectList @LinkedMessage [] []
+        liftIO $ do
+          length threads `shouldBe` 0
+          length links `shouldBe` 0
 
     it "can deal with a bot link" \app -> do
       runAppM app $ do

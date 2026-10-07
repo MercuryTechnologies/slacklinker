@@ -10,7 +10,7 @@
 module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage) where
 
 import Control.Monad.Extra (mapMaybeM)
-import Data.Aeson (Result (..), Value (Object), decodeStrict, (.:), (.:?))
+import Data.Aeson (Object, Result (..), Value (Object), decodeStrict, withObject, (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Data.HashMap.Strict qualified as HashMap
 import Data.List (nub)
@@ -34,8 +34,8 @@ import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackS
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 
-extractBlockLinks :: SlackBlock -> [Text]
-extractBlockLinks = fromBlock
+extractBlockLinks :: Text -> SlackBlock -> [Text]
+extractBlockLinks slackSubdomain = fromBlock
   where
     fromBlock (SlackBlockRichText rt) = fromRichText rt
     fromBlock _ = []
@@ -45,10 +45,39 @@ extractBlockLinks = fromBlock
     fromRichSectionItem _ = []
 
     fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
+    fromRichItem (RichItemOther "message_mention" item) = maybeToList $ messageMentionUrl slackSubdomain item
     fromRichItem _ = []
 
-extractAttachedLinks :: DecodedMessageAttachment -> [Text]
-extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
+messageMentionUrl :: Text -> Value -> Maybe Text
+messageMentionUrl slackSubdomain value =
+  case parse (withObject "message_mention" parseMention) value of
+    Success url -> Just url
+    Error _ -> Nothing
+  where
+    parseMention :: Object -> Parser Text
+    parseMention obj = do
+      mentionedUrl <- obj .:? "url"
+      case mentionedUrl of
+        Just url | url /= "" -> pure url
+        _ -> do
+          channelId :: Text <- obj .: "channel_id"
+          messageTs :: Text <- obj .: "message_ts"
+          rawThreadTs :: Maybe Text <- obj .:? "thread_ts"
+          -- Leave off a thread_ts that is not a Slack timestamp.
+          -- splitSlackUrl rejects the whole URL when that query value is invalid.
+          let threadTs = rawThreadTs >>= \ts -> ts <$ guard (validateTs ts)
+          guard $ validateTs messageTs
+          maybe empty pure
+            $ buildSlackUrl
+              SlackUrlParts
+                { workspaceName = slackSubdomain
+                , channelId = ConversationId channelId
+                , messageTs
+                , threadTs
+                }
+
+extractAttachedLinks :: Text -> DecodedMessageAttachment -> [Text]
+extractAttachedLinks slackSubdomain attachment = fromUrlLinks ++ blockLinks
   where
     fromUrlLinks :: [Text]
     fromUrlLinks = maybeToList attachment.fromUrl
@@ -57,7 +86,7 @@ extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
     blockLinks = maybe [] (concatMap extractBlockLinksFromMessageBlock) attachment.messageBlocks
 
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [Text]
-    extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
+    extractBlockLinksFromMessageBlock messageBlock = concatMap (extractBlockLinks slackSubdomain) messageBlock.message.blocks
 
 data MessageDestination = MessageDestination
   { replyToTs :: Maybe Text
@@ -142,8 +171,8 @@ handleMessage msg teamId = do
   workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
-      let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
-          attachedLinks = mconcat $ extractAttachedLinks <$> mapMaybe decoded (fromMaybe [] ev.attachments)
+      let blockLinks = mconcat $ extractBlockLinks workspace.slackSubdomain <$> fromMaybe [] ev.blocks
+          attachedLinks = mconcat $ extractAttachedLinks workspace.slackSubdomain <$> mapMaybe decoded (fromMaybe [] ev.attachments)
           rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
           links = nub $ blockLinks <> attachedLinks <> rawLinks
 
