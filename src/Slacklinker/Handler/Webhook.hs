@@ -62,18 +62,16 @@ messageMentionUrl slackSubdomain value =
         _ -> do
           channelId :: Text <- obj .: "channel_id"
           messageTs :: Text <- obj .: "message_ts"
-          rawThreadTs :: Maybe Text <- obj .:? "thread_ts"
-          -- Leave off a thread_ts that is not a Slack timestamp.
-          -- splitSlackUrl rejects the whole URL when that query value is invalid.
-          let threadTs = rawThreadTs >>= \ts -> ts <$ guard (validateTs ts)
           guard $ validateTs messageTs
+          -- Slack describes `thread_ts` as when the mention occurred.
+          -- `recordLink` replies on it as the thread parent. Attach it only after a captured element shows it is the parent of `message_ts`.
           maybe empty pure
             $ buildSlackUrl
               SlackUrlParts
                 { workspaceName = slackSubdomain
                 , channelId = ConversationId channelId
                 , messageTs
-                , threadTs
+                , threadTs = Nothing
                 }
 
 extractAttachedLinks :: Text -> DecodedMessageAttachment -> [Text]

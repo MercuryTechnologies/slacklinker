@@ -126,16 +126,23 @@ spec = do
         handleMessage msg teamId
         expectRecordedLink wsId msg parts
 
-    it "records a message mention thread on the parent timestamp" \app -> do
+    it "records a rebuilt message mention on message_ts when thread_ts is set" \app -> do
       runAppM app $ do
         (wsId, teamId) <- createWorkspace
-        let (_, parts) = sampleUrlToChild
+        let (_, child) = sampleUrlToChild
+            parts =
+              SlackUrlParts
+                { workspaceName = child.workspaceName
+                , channelId = child.channelId
+                , messageTs = child.messageTs
+                , threadTs = Nothing
+                }
             msg =
               decodeMention
                 $ mention
-                  [ "channel_id" .= parts.channelId.unConversationId
-                  , "message_ts" .= parts.messageTs
-                  , "thread_ts" .= fromJust parts.threadTs
+                  [ "channel_id" .= child.channelId.unConversationId
+                  , "message_ts" .= child.messageTs
+                  , "thread_ts" .= fromJust child.threadTs
                   ]
         handleMessage msg teamId
         expectRecordedLink wsId msg parts
