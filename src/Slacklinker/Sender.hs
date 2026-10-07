@@ -16,6 +16,7 @@ import Database.Esqueleto.Experimental qualified as E
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
+import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
 import Slacklinker.Exceptions (ErrorSite (SenderJob), SlacklinkerBug (..))
 import Slacklinker.Import

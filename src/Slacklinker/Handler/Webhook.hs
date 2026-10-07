@@ -7,9 +7,8 @@
    endpoint handler. After this, we know that the messages were sent by Slack
    and can be trusted.
 -}
-module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage) where
+module Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR, handleMessage, handleCallback) where
 
-import Control.Monad.Extra (mapMaybeM)
 import Data.Aeson (Result (..), Value (Object), decodeStrict, (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Data.HashMap.Strict qualified as HashMap
@@ -17,6 +16,8 @@ import Data.List (nubBy)
 import Data.Map.Strict qualified as Map
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
+import OpenTelemetry.Context qualified as OTel
+import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import OpenTelemetry.Trace.Core (Attribute, Span, ToAttribute (toAttribute))
 import Slacklinker.App
 import Slacklinker.Exceptions
@@ -73,11 +74,12 @@ extractAttachedLinks workspaceName attachment = fromUrlLinks ++ blockLinks
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [SlackUrlParts]
     extractBlockLinksFromMessageBlock messageBlock = concatMap (extractBlockLinks workspaceName) messageBlock.message.blocks
 
--- | Merge metadata by URL.
---
--- URLs for the same message can differ in whether they include thread metadata.
--- If two items have the same URL but one is missing a `threadTs`, drop the one
--- without the `threadTs`.
+{- | Merge metadata by URL.
+
+URLs for the same message can differ in whether they include thread metadata.
+If two items have the same URL but one is missing a `threadTs`, drop the one
+without the `threadTs`.
+-}
 mergeLinkDestinations :: [SlackUrlParts] -> [SlackUrlParts]
 mergeLinkDestinations =
     -- Deduplicate threads.
@@ -92,8 +94,9 @@ mergeLinkDestinations =
     preferThread incoming existing = if isJust incoming.threadTs then incoming else existing
     sameThread a b = referencedThread a == referencedThread b
 
--- | A thread identity, used for ignoring links between messages in the same
--- thread.
+{- | A thread identity, used for ignoring links between messages in the same
+thread.
+-}
 data ThreadReference = ThreadReference
   { channelId :: ConversationId
   , threadTs :: Text
@@ -169,14 +172,28 @@ workspaceByTeamId teamId = (runDB $ getBy $ UniqueWorkspaceSlackId teamId) >>= (
 
 handleMessage :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> TeamId -> m ()
 handleMessage msg teamId = do
+  owner <- OTel.lookupSpan <$> OTel.getContext
+  handleMessageOnSpan owner msg teamId
+
+-- Capture ownership before entering any helpers or database spans.
+handleMessageOnSpan :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => Maybe Span -> em -> TeamId -> m ()
+handleMessageOnSpan owner msg teamId = do
+  outcome "failure"
+  for_ owner $ \span -> addAttribute span "slack.event.channel_type" $ channelTypeName ev.channelType
   workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
       let blockLinks = concatMap (extractBlockLinks workspace.slackSubdomain) $ fromMaybe [] ev.blocks
           attachedLinks = concatMap (extractAttachedLinks workspace.slackSubdomain) $ mapMaybe decoded (fromMaybe [] ev.attachments)
           rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
-          links = mergeLinkDestinations $ blockLinks <> attachedLinks <> mapMaybe splitSlackUrl rawLinks
+          candidates = blockLinks <> attachedLinks <> mapMaybe splitSlackUrl rawLinks
+          links = mergeLinkDestinations candidates
           linkSource = extractableMessageToSlackUrlParts workspace.slackSubdomain ev
+
+      -- Candidates are parsed Slack references, including URL-less mentions.
+      -- Merge by message identity, retaining thread metadata across sources.
+      recordCount "slack.links.candidate_count" $ length candidates
+      recordCount "slack.links.unique_candidate_count" $ length links
 
       -- FIXME(evanr): The only IO these `record*` functions perform
       -- currently is database inserts, so I think they can/should be run in
@@ -188,20 +205,45 @@ handleMessage msg teamId = do
             JoinedChannel {workspaceId, name = Nothing, channelId = ev.channel}
       let joinedChannelId = either entityKey identity joinedChannelId_
 
-      repliedThreadIds <- mapMaybeM (recordLink workspaceId knownUserId joinedChannelId linkSource) links
+      repliedThreadIds <- mapM (recordLink workspaceId knownUserId joinedChannelId linkSource) links
+      recordCount "slack.links.recognized_count" $ length links
+      recordCount "slack.links.same_thread_excluded_count" $ length $ filter isNothing repliedThreadIds
 
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
-      for_ repliedThreadIds $ senderEnqueue . UpdateReply
+      recordCount "slack.links.jobs_queued" 0
+      slackJobs <-
+        foldM
+          ( \queued todo -> case todo of
+              Nothing -> pure queued
+              Just threadId -> do
+                senderEnqueue $ UpdateReply threadId
+                let queued' = queued + 1
+                recordCount "slack.links.jobs_queued" queued'
+                pure queued'
+          )
+          0
+          repliedThreadIds
 
-      handleLinearChannelMessage workspaceE knownUserId joinedChannelId ev
+      linearJobs <- handleLinearChannelMessage owner workspaceE knownUserId joinedChannelId ev
+      outcome $ if slackJobs + linearJobs > 0 then "work_queued" else "no_work"
     Im -> do
       handleImCommand (workspaceMetaFromWorkspaceE workspaceE) ev.channel ev.text ev.files
+      -- Every successful IM command enqueues exactly one response or command job.
+      outcome "work_queued"
     Group ->
       -- we don't do these
-      pure ()
+      outcome "ignored"
   where
     ev = extractData msg
+    recordCount name value = for_ owner $ \span -> addAttribute span name (value :: Int)
+    outcome value = for_ owner $ \span -> addAttribute span "slack.event.processing_outcome" (value :: Text)
+
+channelTypeName :: ChannelType -> Text
+channelTypeName = \case
+  Channel -> "channel"
+  Im -> "im"
+  Group -> "group"
 
 addEventAttributes :: Event -> TeamId -> Span -> AppM ()
 addEventAttributes event teamId span = do
@@ -310,8 +352,8 @@ addEventAttributes event teamId span = do
           , (SemConv.slackEventNumAttachments, Just . toAttribute . maybe 0 length $ attachments)
           ]
 
-handleCallback :: Event -> TeamId -> AppM ()
-handleCallback event teamId = case event of
+handleCallback :: Maybe Span -> Event -> TeamId -> AppM ()
+handleCallback owner event teamId = case event of
   -- Handle both regular and bot messages uniformly.
   -- Some regular messages may actually be bot messages, maybe legacy bots.
   EventMessage ev -> handleMessage' ev
@@ -340,12 +382,18 @@ handleCallback event teamId = case event of
   -- Log unknown events
   EventUnknown v -> logDebug $ "unknown webhook callback: " <> tshow v
   where
+    recordAttribute :: (MonadIO m, ToAttribute a) => Text -> a -> m ()
+    recordAttribute name value = for_ owner $ \span -> addAttribute span name value
     handleMessage' :: (HasApp m, MonadUnliftIO m, ExtractableMessage em) => em -> m ()
     handleMessage' ev = do
+      recordAttribute "slack.event.processing_outcome" ("failure" :: Text)
+      recordAttribute "slack.event.channel_type" $ channelTypeName (extractData ev).channelType
       blocklist <- getsApp (.config.blockedAppIds)
-      case (extractData ev).appId of
-        Just appId | appId `elem` blocklist -> pure ()
-        _ -> handleMessage ev teamId
+      let blocked = maybe False (`elem` blocklist) (extractData ev).appId
+      recordAttribute "slack.event.app_blocked" blocked
+      if blocked
+        then recordAttribute "slack.event.processing_outcome" ("ignored" :: Text)
+        else handleMessageOnSpan owner ev teamId
 
 handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
@@ -354,7 +402,8 @@ handleEvent (EventEventCallback EventCallback {event, teamId}) = do
   withCurrentSpan \span -> do
     addAttribute span SemConv.slackEventConstructor (cs (conNameOf event) :: Text)
     addEventAttributes event teamId span
-  handleCallback event teamId
+  owner <- OTel.lookupSpan <$> OTel.getContext
+  handleCallback owner event teamId
   pure $ Object mempty
 handleEvent (EventUnknownWebhook v) = do
   logInfo $ "unknown webhook event: " <> tshow v

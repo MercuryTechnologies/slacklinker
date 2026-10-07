@@ -4,13 +4,25 @@ import Control.Monad.Fail (fail)
 import Data.Aeson (Value, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (parseEither)
+import Data.Either (isLeft)
 import Database.Persist
-import Slacklinker.App (HasApp, runAppM, runDB)
+import Database.Persist.Sql (rawExecute)
+import OpenTelemetry.Attributes qualified as Attr
+import OpenTelemetry.Context qualified as Context
+import OpenTelemetry.Context.ThreadLocal qualified as Context
+import OpenTelemetry.Processor.Span (ShutdownResult (..), SpanProcessor (..))
+import OpenTelemetry.Trace.Core qualified as OTel
+import OpenTelemetry.Trace.Id.Generator.Default (defaultIdGenerator)
+import OpenTelemetry.Trace.Sampler (alwaysOn)
+import Slacklinker.App (App (..), AppConfig (..), HasApp, runAppM, runDB)
 import Slacklinker.Handler.TestData
 import Slacklinker.Handler.TestUtils
-import Slacklinker.Handler.Webhook (handleMessage)
+import Slacklinker.Handler.Webhook (handleCallback, handleMessage)
+import Slacklinker.Linear.WebhookSpec (goldenMessage)
 import Slacklinker.Models
+import Slacklinker.Sender.Types (SenderEnvelope (..), SenderRequest (..), senderChan)
 import Slacklinker.SplitUrl (SlackUrlParts (..), splitSlackUrl)
+import Test.HUnit.Lang (HUnitFailure)
 import TestApp
 import TestImport
 import TestUtils (createWorkspace)
@@ -32,6 +44,7 @@ doBotLink teamId ts url = do
 
 spec :: Spec
 spec = do
+  decisionSpec
   withApp $ describe "User insertion" do
     it "inserts a user when a link is sent" \app -> do
       runAppM app do
@@ -337,3 +350,197 @@ attachmentWithBlock block =
                ]
            ]
     ]
+
+decisionSpec :: Spec
+decisionSpec = withApp $ describe "Webhook decision telemetry" do
+  it "processes callbacks without a tracing span" \app -> do
+    (workspaceId, teamId) <- runAppM app createWorkspace
+    let (url, parts) = sampleUrl
+    runAppM app $ handleCallback Nothing (EventMessage $ messageEventWithBlocks ts1 [SlackBlockRichText $ urlRichText url]) teamId
+    thread <- runAppM app $ runDB $ getBy $ UniqueRepliedThread workspaceId parts.channelId parts.messageTs
+    thread `shouldSatisfy` isJust
+
+  it "counts merged mention and URL references once while retaining thread metadata" \app -> do
+    teamId <- decisionFixture app
+    let (_, parts) = sampleUrlToChild
+        url = "https://jadeapptesting.slack.com/archives/C045V0VJT16/p1668735634647249"
+    msg <- decodeMessage [] [attachmentWithBlock $ richTextBlock "rich_text_section" [mention parts (Just url)]]
+    withEventSpan "work_queued" \tracer owner -> do
+      jobs <- processEvent tracer owner app (EventMessage msg) teamId
+      jobs `shouldBe` ["update_reply"]
+      checkCounts owner slackCountFields [2, 1, 1, 0, 1]
+    threads <- runAppM app $ runDB $ selectList @RepliedThread [] []
+    map ((.threadTs) . entityVal) threads `shouldBe` [fromJust parts.threadTs]
+
+  it "ignores a blocked app before either integration is evaluated" \app -> do
+    (_, teamId) <- runAppM app createWorkspace
+    let blockedApp = app {config = app.config {blockedAppIds = ["XYZ123"]}}
+        event = EventBotMessage $ botMessageEventWithBlocks ts1 [SlackBlockRichText $ urlRichText $ fst sampleUrl]
+    withEventSpan "ignored" \tracer owner -> do
+      jobs <- processEvent tracer owner blockedApp event teamId
+      jobs `shouldBe` []
+      attribute owner "slack.event.app_blocked" True
+      attribute owner "slack.event.channel_type" ("channel" :: Text)
+      for_ (slackCountFields <> linearCountFields <> ["linear.tickets.skip_reason"]) $ absent owner
+
+  for_ [(Im, "im", "work_queued", ["send_message"]), (Group, "group", "ignored", [])] \(selectedChannelType, channelName, outcome, expectedJobs) ->
+    it ("does not evaluate integrations for " <> unpack channelName) \app -> do
+      (_, teamId) <- runAppM app createWorkspace
+      let MessageEvent {..} = messageEventWithBlocks ts1 []
+          event = EventMessage MessageEvent {channelType = selectedChannelType, ..}
+      withEventSpan outcome \tracer owner -> do
+        jobs <- processEvent tracer owner app event teamId
+        jobs `shouldBe` expectedJobs
+        attribute owner "slack.event.channel_type" (channelName :: Text)
+        for_ (slackCountFields <> linearCountFields <> ["linear.tickets.skip_reason"]) $ absent owner
+
+  let (parentUrl, parentParts) = sampleUrl
+      (childUrl, _) = sampleUrlToChild
+      message urls body = withMessageText (messageEventWithBlocks ts1 $ map (SlackBlockRichText . urlRichText) urls) body
+      sameThread = updateChannelId (updateThreadTs (message [parentUrl] "hello") (Just parentParts.messageTs)) parentParts.channelId
+  for_
+    [ ("no candidates", message [] "hello", [0, 0, 0, 0, 0], [0, 0, 0, 0], "no_work", [])
+    , ("unrecognized URL and unknown Linear team", message ["https://example.com"] "OTHER-1", [0, 0, 0, 0, 0], [1, 1, 0, 0], "no_work", [])
+    , ("same-thread exclusion", sameThread, [1, 1, 1, 1, 0], [0, 0, 0, 0], "no_work", [])
+    , ("Slack work despite no Linear candidates", updateThreadTs (message [parentUrl, parentUrl, childUrl] "hello") (Just ts2), [3, 2, 2, 0, 2], [0, 0, 0, 0], "work_queued", ["update_reply", "update_reply"])
+    , ("Linear work despite no Slack candidates", message [] "ENG-1 ENG-1 ENG-2 OTHER-1", [0, 0, 0, 0, 0], [4, 3, 2, 1], "work_queued", ["linear:2"])
+    , ("both integrations queue work", message [parentUrl] "ENG-1", [1, 1, 1, 0, 1], [1, 1, 1, 1], "work_queued", ["update_reply", "linear:1"])
+    ]
+    \(label, msg, slackCounts, linearCounts, outcome, expectedJobs) ->
+      it label \app -> do
+        teamId <- decisionFixture app
+        withEventSpan outcome \tracer owner -> do
+          jobs <- processEvent tracer owner app (EventMessage msg) teamId
+          jobs `shouldBe` expectedJobs
+          attribute owner "slack.event.app_blocked" False
+          attribute owner "slack.event.channel_type" ("channel" :: Text)
+          checkCounts owner slackCountFields slackCounts
+          checkCounts owner linearCountFields linearCounts
+          absent owner "linear.tickets.skip_reason"
+
+  for_ [("linear", "linear_bot"), ("linear-new-ticket", "linear_app")] \(fixtureName, reason) ->
+    it ("keeps Slack work when skipping " <> unpack reason) \app -> do
+      teamId <- decisionFixture app
+      EventEventCallback EventCallback {event} <- goldenMessage fixtureName
+      -- Reuse real Linear webhook fixtures, adding a Slack link to prove that
+      -- these exclusions apply only to Linear processing.
+      let linkBlocks = Just [SlackBlockRichText $ urlRichText parentUrl]
+          withLink = case event of
+            EventMessage MessageEvent {..} -> EventMessage MessageEvent {blocks = linkBlocks, ..}
+            EventBotMessage BotMessageEvent {..} -> EventBotMessage BotMessageEvent {blocks = linkBlocks, ..}
+            _ -> error "expected message fixture"
+      withEventSpan "work_queued" \tracer owner -> do
+        jobs <- processEvent tracer owner app withLink teamId
+        jobs `shouldBe` ["update_reply"]
+        attribute owner "linear.tickets.skip_reason" (reason :: Text)
+        attribute owner "slack.links.jobs_queued" (1 :: Int)
+        for_ linearCountFields $ absent owner
+
+  it "leaves unreached counts absent on workspace lookup failure" \app ->
+    withEventSpan "failure" \_ owner -> do
+      result <- try @IO @SomeException $ runAppM app $ handleCallback (Just owner) (EventMessage $ message [] "hello") (TeamId "UNKNOWN")
+      result `shouldSatisfy` isLeft
+      for_ (slackCountFields <> linearCountFields) $ absent owner
+      fromEither result
+
+  it "retains queued Slack work when the Linear team lookup fails" \app -> do
+    teamId <- decisionFixture app
+    runAppM app $ runDB $ rawExecute "ALTER TABLE linear_teams RENAME TO unavailable_linear_teams" []
+    withEventSpan "failure" \_ owner -> do
+      result <- try @IO @SomeException $ runAppM app $ handleCallback (Just owner) (EventMessage $ message [parentUrl] "ENG-1") teamId
+      result `shouldSatisfy` isLeft
+      checkCounts owner slackCountFields [1, 1, 1, 0, 1]
+      attribute owner "linear.tickets.candidate_count" (1 :: Int)
+      attribute owner "linear.tickets.unique_candidate_count" (1 :: Int)
+      absent owner "linear.tickets.known_team_count"
+      absent owner "linear.tickets.jobs_queued"
+      fromEither result
+
+withMessageText :: MessageEvent -> Text -> MessageEvent
+withMessageText MessageEvent {..} body = MessageEvent {text = body, ..}
+
+decisionFixture :: App -> IO TeamId
+decisionFixture app = runAppM app do
+  (workspaceId, teamId) <- createWorkspace
+  runDB do
+    organizationId <- insert $ LinearOrganization workspaceId "org" "org" "Test organization"
+    insert_ $ LinearTeam organizationId "ENG"
+  pure teamId
+
+slackCountFields, linearCountFields :: [Text]
+slackCountFields = map ("slack.links." <>) ["candidate_count", "unique_candidate_count", "recognized_count", "same_thread_excluded_count", "jobs_queued"]
+linearCountFields = map ("linear.tickets." <>) ["candidate_count", "unique_candidate_count", "known_team_count", "jobs_queued"]
+
+checkCounts :: OTel.Span -> [Text] -> [Int] -> Expectation
+checkCounts owner names values = for_ (zip names values) \(name, value) -> attribute owner name value
+
+attribute :: (Attr.ToAttribute a) => OTel.Span -> Text -> a -> Expectation
+attribute span name value = do
+  attrs <- OTel.spanGetAttributes span
+  Attr.lookupAttribute attrs name `shouldBe` Just (Attr.toAttribute value)
+
+absent :: OTel.Span -> Text -> Expectation
+absent span name = do
+  attrs <- OTel.spanGetAttributes span
+  Attr.lookupAttribute attrs name `shouldBe` Nothing
+
+-- Use a separate queue read end and filter by context so parallel tests cannot
+-- consume or contaminate this event's observed jobs.
+processEvent :: OTel.Tracer -> OTel.Span -> App -> Event -> TeamId -> IO [Text]
+processEvent tracer owner app event teamId = do
+  queue <- atomically $ dupTChan senderChan
+  OTel.inSpan' tracer "dependency" OTel.defaultSpanArguments \child -> do
+    runAppM app $ handleCallback (Just owner) event teamId
+    for_ (slackCountFields <> linearCountFields <> ["slack.event.processing_outcome", "slack.event.app_blocked", "linear.tickets.skip_reason"]) $ absent child
+    expectedContext <- OTel.getSpanContext child
+    envelopes <- atomically $ drain queue
+    matching <-
+      filterM
+        ( \envelope -> case Context.lookupSpan envelope.otelContext of
+            Nothing -> pure False
+            Just span -> (\spanContext -> spanContext.traceId == expectedContext.traceId) <$> OTel.getSpanContext span
+        )
+        envelopes
+    pure $ map (jobName . (.request)) matching
+  where
+    drain queue =
+      tryReadTChan queue >>= \case
+        Nothing -> pure []
+        Just envelope -> (envelope :) <$> drain queue
+    jobName = \case
+      UpdateReply _ -> "update_reply"
+      SendMessage _ -> "send_message"
+      BacklinkPlausibleLinearTickets _ _ _ _ tickets -> "linear:" <> tshow (length tickets)
+      other -> "unexpected: " <> tshow other
+
+withEventSpan :: Text -> (OTel.Tracer -> OTel.Span -> IO ()) -> IO ()
+withEventSpan expectedOutcome action = bracket Context.getContext (void . Context.attachContext) \_ -> do
+  void $ Context.attachContext Context.empty
+  finished <- newIORef []
+  let processor =
+        SpanProcessor
+          { spanProcessorOnStart = \_ _ -> pure ()
+          , spanProcessorOnEnd = \ref -> readIORef ref >>= \s -> modifyIORef' finished (s :)
+          , spanProcessorShutdown = async $ pure ShutdownSuccess
+          , spanProcessorForceFlush = pure ()
+          }
+  bracket
+    (OTel.createTracerProvider [processor] OTel.emptyTracerProviderOptions {OTel.tracerProviderOptionsSampler = alwaysOn, OTel.tracerProviderOptionsIdGenerator = defaultIdGenerator})
+    OTel.shutdownTracerProvider
+    \provider -> do
+      let tracer = OTel.makeTracer provider "webhook-test" OTel.tracerOptions
+      result <- try @IO @SomeException $ OTel.inSpan' tracer "EventMessage" OTel.defaultSpanArguments $ action tracer
+      case result of
+        Left err -> do
+          for_ (fromException err :: Maybe HUnitFailure) throwIO
+          unless (expectedOutcome == "failure") $ throwIO err
+        Right () -> expectedOutcome `shouldNotBe` "failure"
+      exported <- filter ((== "EventMessage") . OTel.spanName) <$> readIORef finished
+      length exported `shouldBe` 1
+      for_ exported \span -> do
+        span.spanEnd `shouldSatisfy` isJust
+        Attr.getDropped span.spanAttributes `shouldBe` 0
+        Attr.lookupAttribute span.spanAttributes "slack.event.processing_outcome" `shouldBe` Just (Attr.toAttribute expectedOutcome)
+        when (expectedOutcome == "failure")
+          $ span.spanStatus
+          `shouldSatisfy` \case OTel.Error _ -> True; _ -> False
