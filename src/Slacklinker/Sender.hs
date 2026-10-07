@@ -7,6 +7,7 @@ module Slacklinker.Sender (
   runSlack,
   senderHandler,
   senderThread,
+  doUpdateReply,
 ) where
 
 import Data.Text (splitOn)
@@ -29,6 +30,7 @@ import Slacklinker.Sender.UserDataUpload
 import Slacklinker.SplitUrl (SlackUrlParts (..), buildSlackUrl)
 import Slacklinker.Types (Emoji (..))
 import Slacklinker.UpdateReply.Sql (linkedMessagesInThread, workspaceByRepliedThreadId)
+import Web.PathPieces (toPathPiece)
 import Web.Slack (chatPostMessage, chatUpdate, conversationsListAll)
 import Web.Slack.Chat (PostMsgReq (..), PostMsgRsp (..), UpdateReq (..), UpdateRsp (..), mkPostMsgReq, mkUpdateReq)
 import Web.Slack.Conversation
@@ -173,8 +175,11 @@ draftMessage workspace links =
       let linksList = unlines $ map ("• " <>) linksToInclude
        in "This thread was linked elsewhere (mouse over for preview):\n" <> linksList
 
-doUpdateReply :: (HasApp m, MonadIO m) => RepliedThreadId -> m ()
-doUpdateReply r = do
+doUpdateReply :: (HasApp m, MonadIO m) => OTel.Span -> RepliedThreadId -> m ()
+doUpdateReply span r = do
+  addAttribute span "slack.replied_thread.id" $ toPathPiece r
+  -- Leave failures to the enclosing inSpan' for exception recording and status.
+  addAttribute span "slack.reply.outcome" ("failure" :: Text)
   -- FIXME(jadel): do locking in case someone happens to run a high
   -- availability slack bot cluster
   (repliedThread, workspaceEntity@(Entity _ workspace), links) <- runDB $ do
@@ -185,6 +190,12 @@ doUpdateReply r = do
         >>= flip orThrow (SlacklinkerBug "workspace does not exist for a replied thread ID")
     pure (repliedThread, workspace, links)
 
+  addAttribute span "slack.team.id" workspace.slackTeamId.unTeamId
+  addAttribute span "slack.channel" repliedThread.conversationId.unConversationId
+  addAttribute span "slack.thread.ts" repliedThread.threadTs
+  addAttribute span "slack.reply.action" $ maybe ("create" :: Text) (const "update") repliedThread.replyTs
+  addAttribute span "slack.reply.link_count" $ length links
+
   let message = draftMessage workspace (map (\(lm, mU, jc) -> (entityVal lm, entityVal <$> mU, entityVal jc)) links)
 
   ts <-
@@ -193,11 +204,13 @@ doUpdateReply r = do
       (repliedThread.conversationId, repliedThread.threadTs, repliedThread.replyTs)
       message
 
+  addAttribute span "slack.reply.ts" ts
   runDB $ do
     update r [RepliedThreadReplyTs =. Just ts]
     updateWhere
       [LinkedMessageId <-. ((\(x, _, _) -> entityKey x) <$> links)]
       [LinkedMessageSent =. True]
+  addAttribute span "slack.reply.outcome" ("success" :: Text)
   where
     sendOrReplaceSlackMessage workspaceInfo (conversationId, _threadTs, Just ts) content =
       updateRspTs <$> runSlackRequest workspaceInfo (UpdateMessage UpdateMessageContext {channel = conversationId, messageTs = ts}) \slackConfig ->
@@ -235,7 +248,7 @@ handleTodo r =
           addWorkspaceInfo span workspaceInfo
           doUpdateJoined workspaceInfo conversation
         UpdateReply replyId -> do
-          doUpdateReply replyId
+          doUpdateReply span replyId
         ReqUploadUserData workspaceInfo conversation files -> do
           doUploadUserData workspaceInfo conversation files
         UpdateAppHome workspaceInfo user -> do
