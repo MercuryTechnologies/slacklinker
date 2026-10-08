@@ -2,6 +2,7 @@ module Slacklinker.Handler.Webhook.ImCommand where
 
 import Data.Text qualified as T
 import Slacklinker.Import
+import Slacklinker.SemConv qualified as SemConv
 import Slacklinker.Sender
 import Web.Slack.Conversation (ConversationId)
 import Web.Slack.Files.Types (FileObject)
@@ -43,7 +44,7 @@ handleImCommand ::
 handleImCommand workspaceMeta conversationId message mfiles = do
   let cmd = parseImCommand message
   inSpan' "handleImCommand" defaultSpanArguments \span -> do
-    addAttribute span "slacklinker.command" $ tshow cmd
+    addAttribute span SemConv.slacklinkerCommand $ tshow cmd
     case cmd of
       Help -> send helpMessage
       JoinAll -> senderEnqueue $ ReqJoinAll workspaceMeta conversationId

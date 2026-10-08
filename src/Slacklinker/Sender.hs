@@ -24,6 +24,7 @@ import Slacklinker.Import
 import Slacklinker.Linear.Sender (doBacklinkLinearTickets)
 import Slacklinker.Linear.Teams (updateLinearTeamsCache)
 import Slacklinker.Models
+import Slacklinker.SemConv qualified as SemConv
 import Slacklinker.Sender.AppHome
 import Slacklinker.Sender.Internal
 import Slacklinker.Sender.Types
@@ -225,10 +226,10 @@ handleTodo r =
   let conName = conNameOf r
    in inSpan' (cs conName) defaultSpanArguments \span -> case r of
         SendMessage req -> do
-          addAttribute span "slack.channel" req.channel.unConversationId
+          addAttribute span SemConv.slackChannel req.channel.unConversationId
           doSendMessage req
         JoinChannel workspaceInfo conversation -> do
-          addAttribute span "slack.channel" conversation.unConversationId
+          addAttribute span SemConv.slackChannel conversation.unConversationId
           addWorkspaceInfo span workspaceInfo
           doJoinChannel workspaceInfo conversation
         ReqJoinAll workspaceInfo conversation -> do
@@ -257,7 +258,7 @@ handleTodo r =
           doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
         RequestTerminate -> throwIO Terminate
   where
-    addWorkspaceInfo span workspaceInfo = addAttribute span "slack.team.id" workspaceInfo.slackTeamId.unTeamId
+    addWorkspaceInfo span workspaceInfo = addAttribute span SemConv.slackTeamId workspaceInfo.slackTeamId.unTeamId
 
 senderThread :: AppM ()
 senderThread = forever $ do

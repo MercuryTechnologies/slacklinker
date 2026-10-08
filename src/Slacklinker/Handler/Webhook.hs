@@ -26,6 +26,7 @@ import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
 import Slacklinker.Linear.Webhook (handleLinearChannelMessage)
 import Slacklinker.Models
+import Slacklinker.SemConv qualified as SemConv
 import Slacklinker.Sender
 import Slacklinker.SplitUrl
 import Web.Slack.Conversation (ConversationId (..))
@@ -204,69 +205,69 @@ handleMessage msg teamId = do
 
 addEventAttributes :: Event -> TeamId -> Span -> AppM ()
 addEventAttributes event teamId span = do
-  addAttribute span "slack.team.id" teamId.unTeamId
+  addAttribute span SemConv.slackTeamId teamId.unTeamId
   case event of
     EventMessage ev -> do
-      addAttribute span "slack.event.type" ("message" :: Text)
-      addAttribute span "slack.conversation.id" ev.channel.unConversationId
-      addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
-      addAttribute span "slack.event.botId" (fromMaybe "" ev.botId)
+      addAttribute span SemConv.slackEventType ("message" :: Text)
+      addAttribute span SemConv.slackConversationId ev.channel.unConversationId
+      addAttribute span SemConv.slackEventAppId (fromMaybe "" ev.appId)
+      addAttribute span SemConv.slackEventBotId (fromMaybe "" ev.botId)
       addAttachmentAttributes ev.attachments span
     EventBotMessage ev -> do
-      addAttribute span "slack.event.type" ("message" :: Text)
-      addAttribute span "slack.event.subtype" ("bot_message" :: Text)
-      addAttribute span "slack.conversation.id" ev.channel.unConversationId
-      addAttribute span "slack.event.appId" (fromMaybe "" ev.appId)
-      addAttribute span "slack.event.botId" ev.botId
+      addAttribute span SemConv.slackEventType ("message" :: Text)
+      addAttribute span SemConv.slackEventSubtype ("bot_message" :: Text)
+      addAttribute span SemConv.slackConversationId ev.channel.unConversationId
+      addAttribute span SemConv.slackEventAppId (fromMaybe "" ev.appId)
+      addAttribute span SemConv.slackEventBotId ev.botId
       addAttachmentAttributes ev.attachments span
     EventMessageChanged -> do
-      addAttribute span "slack.event.type" ("message" :: Text)
-      addAttribute span "slack.event.subtype" ("message_changed" :: Text)
+      addAttribute span SemConv.slackEventType ("message" :: Text)
+      addAttribute span SemConv.slackEventSubtype ("message_changed" :: Text)
       pure ()
     EventMessageDeleted ev -> do
-      addAttribute span "slack.event.type" ("message" :: Text)
-      addAttribute span "slack.event.subtype" ("message_deleted" :: Text)
-      addAttribute span "slack.conversation.id" ev.channel.unConversationId
-      addAttribute span "slack.event.deletedTs" ev.deletedTs
+      addAttribute span SemConv.slackEventType ("message" :: Text)
+      addAttribute span SemConv.slackEventSubtype ("message_deleted" :: Text)
+      addAttribute span SemConv.slackConversationId ev.channel.unConversationId
+      addAttribute span SemConv.slackEventDeletedTs ev.deletedTs
     EventChannelShared ev -> do
-      addAttribute span "slack.event.type" ("channel_shared" :: Text)
-      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+      addAttribute span SemConv.slackEventType ("channel_shared" :: Text)
+      addAttribute span SemConv.slackConversationId ev.channel.unConversationId
     EventChannelUnshared ev -> do
-      addAttribute span "slack.event.type" ("channel_unshared" :: Text)
-      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+      addAttribute span SemConv.slackEventType ("channel_unshared" :: Text)
+      addAttribute span SemConv.slackConversationId ev.channel.unConversationId
     EventChannelJoinMessage -> do
-      addAttribute span "slack.event.type" ("message" :: Text)
-      addAttribute span "slack.event.subtype" ("channel_join" :: Text)
+      addAttribute span SemConv.slackEventType ("message" :: Text)
+      addAttribute span SemConv.slackEventSubtype ("channel_join" :: Text)
       pure ()
     EventChannelCreated ev -> do
-      addAttribute span "slack.event.type" ("channel_created" :: Text)
-      addAttribute span "slack.channel.id" ev.channel.id.unConversationId
-      addAttribute span "slack.channel.name" ev.channel.name
-      addAttribute span "slack.channel.team.id" ev.channel.contextTeamId.unTeamId
+      addAttribute span SemConv.slackEventType ("channel_created" :: Text)
+      addAttribute span SemConv.slackChannelId ev.channel.id.unConversationId
+      addAttribute span SemConv.slackChannelName ev.channel.name
+      addAttribute span SemConv.slackChannelTeamId ev.channel.contextTeamId.unTeamId
     EventChannelLeft ev -> do
-      addAttribute span "slack.event.type" ("channel_left" :: Text)
-      addAttribute span "slack.channel.id" ev.channel.unConversationId
-      addAttribute span "slack.channel.actor.id" ev.actorId.unUserId
+      addAttribute span SemConv.slackEventType ("channel_left" :: Text)
+      addAttribute span SemConv.slackChannelId ev.channel.unConversationId
+      addAttribute span SemConv.slackChannelActorId ev.actorId.unUserId
     EventAppHomeOpened ev -> do
-      addAttribute span "slack.event.type" ("app_home_opened" :: Text)
-      addAttribute span "slack.event.user.id" ev.user.unUserId
-      addAttribute span "slack.conversation.id" ev.channel.unConversationId
+      addAttribute span SemConv.slackEventType ("app_home_opened" :: Text)
+      addAttribute span SemConv.slackEventUserId ev.user.unUserId
+      addAttribute span SemConv.slackConversationId ev.channel.unConversationId
     EventUnknown v -> case parse unknownAttributes v of
-      Success attrs -> for_ attrs \(attrName, attrVal) -> addAttribute span ("slack.event." <> attrName) attrVal
+      Success attrs -> for_ attrs \(attrName, attrVal) -> addAttribute span attrName attrVal
       _ -> pure ()
 
   pure ()
   where
     addAttachmentAttributes :: Maybe [MessageAttachment] -> Span -> AppM ()
     addAttachmentAttributes mAttachments s = do
-      addAttribute s "slack.event.hasAttachments" $ maybe False (not . null) mAttachments
-      addAttribute s "slack.event.numAttachments" $ maybe 0 length mAttachments
+      addAttribute s SemConv.slackEventHasAttachments $ maybe False (not . null) mAttachments
+      addAttribute s SemConv.slackEventNumAttachments $ maybe 0 length mAttachments
       case mAttachments of
         Nothing -> pure ()
         Just attachments -> do
-          addAttribute s "slack.event.attachments.hasMsgUnfurl" $ any hasMsgUnfurl attachments
-          addAttribute s "slack.event.attachments.hasNoMessageBlocks" $ any hasNoMessageBlocks attachments
-          addAttribute s "slack.event.attachments.hasUndecodable" $ any hasUndecodable attachments
+          addAttribute s SemConv.slackEventAttachmentsHasMsgUnfurl $ any hasMsgUnfurl attachments
+          addAttribute s SemConv.slackEventAttachmentsHasNoMessageBlocks $ any hasNoMessageBlocks attachments
+          addAttribute s SemConv.slackEventAttachmentsHasUndecodable $ any hasUndecodable attachments
       pure ()
 
     hasMsgUnfurl :: MessageAttachment -> Bool
@@ -297,16 +298,16 @@ addEventAttributes event teamId span = do
       attachments <- val .:? "attachments" :: Parser (Maybe [Value])
       pure
         $ filterMaybes
-          [ ("type", Just $ toAttribute type_)
-          , ("subtype", toAttribute <$> subtype)
-          , ("appId", toAttribute <$> appId)
-          , ("botId", toAttribute <$> botId)
-          , ("userId", toAttribute <$> userId)
-          , ("channelId", toAttribute <$> channelId)
-          , ("ts", toAttribute <$> ts)
-          , ("team", toAttribute <$> team)
-          , ("hasAttachments", Just . toAttribute . maybe False (not . null) $ attachments)
-          , ("numAttachments", Just . toAttribute . maybe 0 length $ attachments)
+          [ (SemConv.slackEventType, Just $ toAttribute type_)
+          , (SemConv.slackEventSubtype, toAttribute <$> subtype)
+          , (SemConv.slackEventAppId, toAttribute <$> appId)
+          , (SemConv.slackEventBotId, toAttribute <$> botId)
+          , (SemConv.slackUnknownEventUserId, toAttribute <$> userId)
+          , (SemConv.slackUnknownEventChannelId, toAttribute <$> channelId)
+          , (SemConv.slackUnknownEventTs, toAttribute <$> ts)
+          , (SemConv.slackUnknownEventTeam, toAttribute <$> team)
+          , (SemConv.slackEventHasAttachments, Just . toAttribute . maybe False (not . null) $ attachments)
+          , (SemConv.slackEventNumAttachments, Just . toAttribute . maybe 0 length $ attachments)
           ]
 
 handleCallback :: Event -> TeamId -> AppM ()
@@ -373,9 +374,9 @@ postSlackInteractiveWebhookR sig ts body = do
           -- waiting on a bugfix
           -- https://github.com/iand675/hs-opentelemetry/tree/attribute-length-limit-fix
           -- in the meantime, this will help us find issues
-          let attrs = maybe [] (flattenJsonToAttributes "payload") (decodeStrict body)
+          let attrs = maybe [] (flattenJsonToAttributes SemConv.webhookPayload) (decodeStrict body)
           withCurrentSpan \s -> do
-            addAttribute s "payload" (decodeUtf8 body)
+            addAttribute s SemConv.webhookPayload (decodeUtf8 body)
             addAttributes s (HashMap.fromList attrs)
         _ -> pure ()
       throwIO $ VerificationException err

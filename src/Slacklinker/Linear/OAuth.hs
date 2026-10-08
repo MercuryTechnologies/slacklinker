@@ -20,6 +20,7 @@ import Slacklinker.Exceptions (LinearOAuth2Error (..))
 import Slacklinker.Import
 import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..), LinearRefreshToken (..))
 import Slacklinker.Models (EntityField (..), LinearNonce (..), Unique (..), WorkspaceId)
+import Slacklinker.SemConv qualified as SemConv
 import URI.ByteString (Absolute, Authority (..), Host (..), Scheme (..), URIRef (..))
 import URI.ByteString.QQ
 
@@ -151,12 +152,12 @@ refreshSession httpHost workspaceId creds manager token = inSpan' "linear token 
       logInfo $ "Successfully refreshed Linear API session for workspace " <> tshow workspaceId <> " expires in: " <> tshow inner.expiresIn
       for_ inner.expiresIn \t -> do
         let expiresAt = (`addUTCTime` now) . secondsToNominalDiffTime . fromIntegral $ t
-        addAttribute span "linear.oauth.token.expires_at" (tshow expiresAt)
-      addAttribute span "linear.oauth.token.token_type" (fromMaybe "?" inner.tokenType)
+        addAttribute span SemConv.linearOAuthTokenExpiresAt (tshow expiresAt)
+      addAttribute span SemConv.linearOAuthTokenType (fromMaybe "?" inner.tokenType)
       pure inner
     Left err -> do
       logInfo $ "Error refreshing Linear API token for " <> tshow workspaceId <> ": " <> tshow err
-      addAttribute span "linear.oauth.token.error" $ tshow err.tokenResponseError
-      addAttribute span "linear.oauth.token.error.description" $ fromMaybe "" err.tokenResponseErrorDescription
-      addAttribute span "linear.oauth.token.error.uri" . fromMaybe "" $ fmap tshow err.tokenResponseErrorUri
+      addAttribute span SemConv.linearOAuthTokenError $ tshow err.tokenResponseError
+      addAttribute span SemConv.linearOAuthTokenErrorDescription $ fromMaybe "" err.tokenResponseErrorDescription
+      addAttribute span SemConv.linearOAuthTokenErrorUri . fromMaybe "" $ fmap tshow err.tokenResponseErrorUri
       throwIO . LinearOAuth2Error . tshow $ err

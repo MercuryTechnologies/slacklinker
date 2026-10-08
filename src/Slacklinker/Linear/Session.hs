@@ -16,6 +16,7 @@ import Slacklinker.Linear.DB (linearAuthSessionForWorkspace, lockLinearAuthSessi
 import Slacklinker.Linear.OAuth (refreshSession)
 import Slacklinker.Linear.Types (LinearBearerToken (..), LinearClientId (..), LinearClientSecret (..), LinearCreds (..), LinearRefreshToken (..))
 import Slacklinker.Models (EntityField (..), LinearAPIAuthSession (..), LinearOrganizationId, Unique (..), WorkspaceId)
+import Slacklinker.SemConv qualified as SemConv
 import Web.FormUrlEncoded (Form (..), urlEncodeFormStable)
 
 {- | Updates the authentication session for a given Linear org with a new
@@ -69,8 +70,8 @@ getToken' refresher workspaceId = do
       now <- liftIO getCurrentTime
       let expiry = fromMaybe (posixSecondsToUTCTime 0) session.expiresAt
       let shouldRefresh = now > (-thirtyMinutes) `addUTCTime` expiry
-      addAttribute span "linear.oauth.refreshing" shouldRefresh
-      addAttribute span "linear.oauth.current_expires_at" (tshow expiry)
+      addAttribute span SemConv.linearOAuthRefreshing shouldRefresh
+      addAttribute span SemConv.linearOAuthCurrentExpiresAt (tshow expiry)
 
       if shouldRefresh
         then do
