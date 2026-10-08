@@ -7,6 +7,7 @@ module Slacklinker.Tracing (
   addAttributes,
   OTel.defaultSpanArguments,
   withGlobalTracing,
+  withTracingProvider,
   withCurrentSpan,
   flattenJsonToAttributes,
 ) where
@@ -60,10 +61,19 @@ withCurrentSpan act = do
   ctx <- OTel.lookupSpan <$> Context.getContext
   for_ ctx act
 
+{- | Initialize process-wide tracing and flush/shut it down after the action,
+including when the action throws. All owning spans must end inside the action.
+-}
 withGlobalTracing :: (MonadUnliftIO m) => m () -> m ()
-withGlobalTracing act =
+withGlobalTracing = withTracingProvider (liftIO OTel.initializeGlobalTracerProvider)
+
+{- | Bracket a provider's lifetime. Keeping acquisition explicit also permits
+in-memory processors to exercise the same shutdown path as global tracing.
+-}
+withTracingProvider :: (MonadUnliftIO m) => m OTel.TracerProvider -> m () -> m ()
+withTracingProvider acquire act =
   bracket
-    (liftIO OTel.initializeGlobalTracerProvider)
+    acquire
     (liftIO . OTel.shutdownTracerProvider)
     (const act)
 

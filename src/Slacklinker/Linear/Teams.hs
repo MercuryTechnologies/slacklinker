@@ -3,7 +3,7 @@
 {-# LANGUAGE TupleSections #-}
 
 -- | Manages updating the Linear teams in the database.
-module Slacklinker.Linear.Teams (getLinearTeamsUncached, updateLinearTeamsCache, updateAllLinearTeamsCaches) where
+module Slacklinker.Linear.Teams (getLinearTeamsUncached, updateLinearTeamsCache, linearTeamsCacheWorkspaces, updateAllLinearTeamsCaches) where
 
 import Data.GraphQL (get)
 import Data.Vector qualified as V
@@ -51,11 +51,18 @@ updateLinearTeamsCache workspaceId = do
   runDB do
     for_ teams \team -> P.insertBy LinearTeam {linearOrganizationId = linearOrgId, urlKey = team.urlKey}
 
-updateAllLinearTeamsCaches :: (MonadUnliftIO m, HasApp m) => m ()
-updateAllLinearTeamsCaches = do
-  orgs <- fmap (fmap unValue) . runDB $ E.select do
+{- | Plan a cache refresh using the same authenticated organizations as the bulk
+updater. Exposed separately so maintenance commands can summarize progress.
+-}
+linearTeamsCacheWorkspaces :: (MonadUnliftIO m, HasApp m) => m [WorkspaceId]
+linearTeamsCacheWorkspaces =
+  fmap (fmap unValue) . runDB $ E.select do
     (linearOrg, _session) <- linearAuthSessions
     pure linearOrg.workspaceId
+
+updateAllLinearTeamsCaches :: (MonadUnliftIO m, HasApp m) => m ()
+updateAllLinearTeamsCaches = do
+  orgs <- linearTeamsCacheWorkspaces
   -- FIXME(jadel): handle exceptions if we start actually caring more about
   -- multitenancy
   for_ orgs updateLinearTeamsCache
