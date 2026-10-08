@@ -13,7 +13,7 @@ import Control.Monad.Extra (mapMaybeM)
 import Data.Aeson (Result (..), Value (Object), decodeStrict, (.:), (.:?))
 import Data.Aeson.Types (Parser, parse)
 import Data.HashMap.Strict qualified as HashMap
-import Data.List (nub)
+import Data.Map.Strict qualified as Map
 import Database.Persist
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Trace.Core (Attribute, Span, ToAttribute (toAttribute))
@@ -34,7 +34,7 @@ import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackS
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 
-extractBlockLinks :: SlackBlock -> [Text]
+extractBlockLinks :: SlackBlock -> [SlackUrlParts]
 extractBlockLinks = fromBlock
   where
     fromBlock (SlackBlockRichText rt) = fromRichText rt
@@ -49,20 +49,32 @@ extractBlockLinks = fromBlock
 
     fromRichSection (RichTextSection items) = concatMap fromRichItem items
 
-    fromRichItem (RichItemLink RichLinkAttrs {..}) = [url]
+    fromRichItem (RichItemLink RichLinkAttrs {..}) = maybeToList $ splitSlackUrl url
     fromRichItem _ = []
 
-extractAttachedLinks :: DecodedMessageAttachment -> [Text]
+extractAttachedLinks :: DecodedMessageAttachment -> [SlackUrlParts]
 extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
   where
-    fromUrlLinks :: [Text]
-    fromUrlLinks = maybeToList attachment.fromUrl
+    fromUrlLinks = maybeToList $ attachment.fromUrl >>= splitSlackUrl
 
-    blockLinks :: [Text]
     blockLinks = maybe [] (concatMap extractBlockLinksFromMessageBlock) attachment.messageBlocks
 
-    extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [Text]
+    extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [SlackUrlParts]
     extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
+
+-- | Merge metadata by URL.
+--
+-- URLs for the same message can differ in whether they include thread metadata.
+-- If two items have the same URL but one is missing a `threadTs`, drop the one
+-- without the `threadTs`.
+mergeLinkDestinations :: [SlackUrlParts] -> [SlackUrlParts]
+mergeLinkDestinations = Map.elems . Map.fromListWith preferThread . map keyed
+  where
+    -- Here we extract a sense of 'message identity', intentionally ignoring
+    -- the `threadTs` field.
+    keyed destination = ((destination.workspaceName, destination.channelId, destination.messageTs), destination)
+    -- We have `<>` at home.
+    preferThread incoming existing = if isJust incoming.threadTs then incoming else existing
 
 -- | A thread identity, used for ignoring links between messages in the same
 -- thread.
@@ -144,10 +156,11 @@ handleMessage msg teamId = do
   workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
-      let blockLinks = mconcat $ extractBlockLinks <$> fromMaybe [] ev.blocks
-          attachedLinks = mconcat $ extractAttachedLinks <$> mapMaybe decoded (fromMaybe [] ev.attachments)
+      let blockLinks = concatMap extractBlockLinks $ fromMaybe [] ev.blocks
+          attachedLinks = concatMap extractAttachedLinks $ mapMaybe decoded (fromMaybe [] ev.attachments)
           rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
-          links = nub $ blockLinks <> attachedLinks <> rawLinks
+          links = mergeLinkDestinations $ blockLinks <> attachedLinks <> mapMaybe splitSlackUrl rawLinks
+          linkSource = extractableMessageToSlackUrlParts workspace.slackSubdomain ev
 
       -- FIXME(evanr): The only IO these `record*` functions perform
       -- currently is database inserts, so I think they can/should be run in
@@ -159,12 +172,11 @@ handleMessage msg teamId = do
             JoinedChannel {workspaceId, name = Nothing, channelId = ev.channel}
       let joinedChannelId = either entityKey identity joinedChannelId_
 
-      repliedThreadIds <- mapMaybeM (handleUrl workspaceE knownUserId joinedChannelId) links
+      repliedThreadIds <- mapMaybeM (recordLink workspaceId knownUserId joinedChannelId linkSource) links
 
       -- this is like a n+1 query of STM, which is maybe bad for perf vs running
       -- it one action, but whatever
-      forM_ repliedThreadIds $ \todo -> do
-        for_ todo $ senderEnqueue . UpdateReply
+      for_ repliedThreadIds $ senderEnqueue . UpdateReply
 
       handleLinearChannelMessage workspaceE knownUserId joinedChannelId ev
     Im -> do
@@ -174,11 +186,6 @@ handleMessage msg teamId = do
       pure ()
   where
     ev = extractData msg
-    handleUrl (Entity workspaceId workspace) knownUserId joinedChannelId url = do
-      let linkSource = extractableMessageToSlackUrlParts workspace.slackSubdomain ev
-
-      for (splitSlackUrl url) \linkDestination -> do
-        recordLink workspaceId knownUserId joinedChannelId linkSource linkDestination
 
 addEventAttributes :: Event -> TeamId -> Span -> AppM ()
 addEventAttributes event teamId span = do
