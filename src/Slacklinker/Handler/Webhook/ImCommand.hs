@@ -35,7 +35,7 @@ helpMessage =
     ]
 
 handleImCommand ::
-  (MonadUnliftIO m) =>
+  (MonadIO m) =>
   WorkspaceMeta ->
   ConversationId ->
   Text ->
@@ -43,21 +43,21 @@ handleImCommand ::
   m ()
 handleImCommand workspaceMeta conversationId message mfiles = do
   let cmd = parseImCommand message
-  inSpan' "handleImCommand" defaultSpanArguments \span -> do
+  withCurrentSpan \span ->
     addAttribute span SemConv.slacklinkerCommand $ tshow cmd
-    case cmd of
-      Help -> send helpMessage
-      JoinAll -> senderEnqueue $ ReqJoinAll workspaceMeta conversationId
-      UpdateJoined ->
-        senderEnqueue
-          $ ReqUpdateJoined workspaceMeta conversationId
-      UploadUserData -> do
-        let file = headMay =<< mfiles
-        case file of
-          Nothing -> send "No files attached to this message. Send a Slack snippet of JSON to update user data."
-          Just f -> senderEnqueue $ ReqUploadUserData workspaceMeta conversationId f
-      UpdateLinearTeams -> do
-        senderEnqueue $ ReqUpdateLinearTeams workspaceMeta conversationId
+  case cmd of
+    Help -> send helpMessage
+    JoinAll -> senderEnqueue $ ReqJoinAll workspaceMeta conversationId
+    UpdateJoined ->
+      senderEnqueue
+        $ ReqUpdateJoined workspaceMeta conversationId
+    UploadUserData -> do
+      let file = headMay =<< mfiles
+      case file of
+        Nothing -> send "No files attached to this message. Send a Slack snippet of JSON to update user data."
+        Just f -> senderEnqueue $ ReqUploadUserData workspaceMeta conversationId f
+    UpdateLinearTeams -> do
+      senderEnqueue $ ReqUpdateLinearTeams workspaceMeta conversationId
   where
     send messageContent =
       senderEnqueue

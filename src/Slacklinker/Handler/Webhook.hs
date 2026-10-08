@@ -351,10 +351,11 @@ handleEvent :: SlackWebhookEvent -> AppM Value
 handleEvent (EventUrlVerification UrlVerificationPayload {..}) = do
   pure . toJSON $ UrlVerificationResponse {challenge}
 handleEvent (EventEventCallback EventCallback {event, teamId}) = do
-  inSpan' (cs $ conNameOf event) defaultSpanArguments \span -> do
+  withCurrentSpan \span -> do
+    addAttribute span SemConv.slackEventConstructor (cs (conNameOf event) :: Text)
     addEventAttributes event teamId span
-    handleCallback event teamId
-    pure $ Object mempty
+  handleCallback event teamId
+  pure $ Object mempty
 handleEvent (EventUnknownWebhook v) = do
   logInfo $ "unknown webhook event: " <> tshow v
   pure $ Object mempty
@@ -383,5 +384,6 @@ postSlackInteractiveWebhookR sig ts body = do
     Right todo -> do
       logDebug $ "payload: " <> cs body <> "\n\n"
       logDebug $ "webhook todo: " <> tshow todo <> "\n\n"
-      inSpan (cs $ conNameOf todo) defaultSpanArguments $ do
-        handleEvent todo
+      withCurrentSpan \span ->
+        addAttribute span SemConv.slackWebhookConstructor (cs (conNameOf todo) :: Text)
+      handleEvent todo

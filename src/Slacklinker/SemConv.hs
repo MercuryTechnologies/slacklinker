@@ -15,6 +15,14 @@ import Slacklinker.Prelude (Text)
 slackTeamId :: Text
 slackTeamId = "slack.team.id"
 
+-- | Haskell constructor of the verified outer webhook envelope.
+slackWebhookConstructor :: Text
+slackWebhookConstructor = "slack.webhook.constructor"
+
+-- | Haskell constructor of the decoded callback event.
+slackEventConstructor :: Text
+slackEventConstructor = "slack.event.constructor"
+
 -- | Slack event type, such as message or channel_created.
 slackEventType :: Text
 slackEventType = "slack.event.type"
