@@ -1,5 +1,9 @@
 module Slacklinker.Handler.WebhookSpec (spec) where
 
+import Control.Monad.Fail (fail)
+import Data.Aeson (Value, (.=))
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Types (parseEither)
 import Database.Persist
 import Slacklinker.App (HasApp, runAppM, runDB)
 import Slacklinker.Handler.TestData
@@ -208,3 +212,112 @@ spec = do
         allThreads <- runDB $ selectList @RepliedThread [] []
         liftIO $ length allThreads `shouldBe` 1
         pure ()
+
+  withApp $ describe "Rich message mentions" do
+    forM_ ["rich_text_section", "rich_text_list", "rich_text_quote", "rich_text_preformatted"] \container ->
+      forM_ [False, True] \inAttachment ->
+        it ("backlinks a URL-less mention in " <> unpack container <> if inAttachment then " inside an attachment" else "") \app -> do
+          let (_, parts) = sampleUrl
+              block = richTextBlock container [mention parts Nothing]
+          msg <-
+            if inAttachment
+              then decodeMessage [] [attachmentWithBlock block]
+              else decodeMessage [block] []
+          runAppM app do
+            (wsId, teamId) <- createWorkspace
+            handleMessage msg teamId
+            Just (Entity rtId _) <- runDB $ getBy $ UniqueRepliedThread wsId parts.channelId parts.messageTs
+            [Entity _ linkedMessage] <- runDB $ selectList [LinkedMessageRepliedThreadId ==. rtId] []
+            Just (Entity channelId _) <- runDB $ getBy $ UniqueJoinedChannel wsId msg.channel
+            liftIO do
+              linkedMessage.joinedChannelId `shouldBe` channelId
+              linkedMessage.messageTs `shouldBe` msg.ts
+              linkedMessage.threadTs `shouldBe` Nothing
+              linkedMessage.sent `shouldBe` False
+
+    forM_ [False, True] \inAttachment ->
+      it ("keeps mention thread metadata when its URL omits it" <> if inAttachment then " in an attachment" else "") \app -> do
+        let (_, parts) = sampleUrlToChild
+            urlWithoutThread = "https://jadeapptesting.slack.com/archives/C045V0VJT16/p1668735634647249"
+            block = richTextBlock "rich_text_section" [mention parts (Just urlWithoutThread)]
+        msg <-
+          if inAttachment
+            then decodeMessage [] [attachmentWithBlock block]
+            else decodeMessage [block] []
+        runAppM app do
+          (wsId, teamId) <- createWorkspace
+          handleMessage msg teamId
+          threads <- runDB $ selectList [RepliedThreadWorkspaceId ==. wsId] []
+          liftIO $ map ((.threadTs) . entityVal) threads `shouldBe` [fromJust parts.threadTs]
+
+    let (_, parentParts) = sampleUrl
+        (_, childParts) = sampleUrlToChild
+    forM_
+      [ ("parent", parentParts, childParts.messageTs, Just parentParts.messageTs)
+      , ("child", childParts, parentParts.messageTs, Nothing)
+      , ("sibling", childParts, ts1, Just parentParts.messageTs)
+      , ("message itself", parentParts, parentParts.messageTs, Nothing)
+      ]
+      \(name, destination, sourceTs, sourceThreadTs) ->
+        it ("ignores a mention of a " <> name <> " in the same thread") \app -> do
+          MessageEvent {..} <- decodeMessage [richTextBlock "rich_text_section" [mention destination Nothing]] []
+          let msg = MessageEvent {channel = destination.channelId, ts = sourceTs, threadTs = sourceThreadTs, ..}
+          runAppM app do
+            (wsId, teamId) <- createWorkspace
+            handleMessage msg teamId
+            threads <- runDB $ selectList [RepliedThreadWorkspaceId ==. wsId] []
+            liftIO $ length threads `shouldBe` 0
+
+-- Decode the wire representation so tests cover both the dependency's parser
+-- and extraction, including the separate attachment decoding path.
+decodeMessage :: [Value] -> [Value] -> IO MessageEvent
+decodeMessage blocks attachments =
+  either fail pure
+    $ parseEither Aeson.parseJSON
+    $ Aeson.object
+      [ "channel" .= ("C043YJGBY49" :: Text)
+      , "channel_type" .= ("channel" :: Text)
+      , "user" .= ("U043H11ES4V" :: Text)
+      , "ts" .= ts1
+      , "text" .= ("a message reference" :: Text)
+      , "blocks" .= blocks
+      , "attachments" .= attachments
+      ]
+
+mention :: SlackUrlParts -> Maybe Text -> Value
+mention parts url =
+  Aeson.object
+    $ [ "type" .= ("message_mention" :: Text)
+      , "channel_id" .= parts.channelId
+      , "message_ts" .= parts.messageTs
+      ]
+    <> maybe [] (\ts -> ["thread_ts" .= ts]) parts.threadTs
+    <> maybe [] (\u -> ["url" .= u]) url
+
+richTextBlock :: Text -> [Value] -> Value
+richTextBlock container items =
+  Aeson.object
+    [ "type" .= ("rich_text" :: Text)
+    , "elements"
+        .= [ Aeson.object
+               [ "type" .= container
+               , "elements"
+                   .= if container == "rich_text_list"
+                     then [Aeson.object ["type" .= ("rich_text_section" :: Text), "elements" .= items]]
+                     else items
+               ]
+           ]
+    ]
+
+attachmentWithBlock :: Value -> Value
+attachmentWithBlock block =
+  Aeson.object
+    [ "message_blocks"
+        .= [ Aeson.object
+               [ "team" .= ("T0123" :: Text)
+               , "channel" .= ("C043YJGBY49" :: Text)
+               , "ts" .= ts2
+               , "message" .= Aeson.object ["blocks" .= [block]]
+               ]
+           ]
+    ]

@@ -34,8 +34,8 @@ import Web.Slack.Experimental.RequestVerification (SlackRequestTimestamp, SlackS
 import Web.Slack.Types (TeamId (..))
 import Web.Slack.Types qualified as Slack (UserId (..))
 
-extractBlockLinks :: SlackBlock -> [SlackUrlParts]
-extractBlockLinks = fromBlock
+extractBlockLinks :: Text -> SlackBlock -> [SlackUrlParts]
+extractBlockLinks workspaceName = fromBlock
   where
     fromBlock (SlackBlockRichText rt) = fromRichText rt
     fromBlock _ = []
@@ -50,17 +50,26 @@ extractBlockLinks = fromBlock
     fromRichSection (RichTextSection items) = concatMap fromRichItem items
 
     fromRichItem (RichItemLink RichLinkAttrs {..}) = maybeToList $ splitSlackUrl url
+    -- Mentions already identify the destination; Slack need not supply a URL.
+    fromRichItem (RichItemMessageMention RichMessageMention {..}) =
+      [ SlackUrlParts
+          { workspaceName
+          , channelId = rmmChannelId
+          , messageTs = rmmMessageTs
+          , threadTs = rmmThreadTs
+          }
+      ]
     fromRichItem _ = []
 
-extractAttachedLinks :: DecodedMessageAttachment -> [SlackUrlParts]
-extractAttachedLinks attachment = fromUrlLinks ++ blockLinks
+extractAttachedLinks :: Text -> DecodedMessageAttachment -> [SlackUrlParts]
+extractAttachedLinks workspaceName attachment = fromUrlLinks ++ blockLinks
   where
     fromUrlLinks = maybeToList $ attachment.fromUrl >>= splitSlackUrl
 
     blockLinks = maybe [] (concatMap extractBlockLinksFromMessageBlock) attachment.messageBlocks
 
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [SlackUrlParts]
-    extractBlockLinksFromMessageBlock messageBlock = concatMap extractBlockLinks messageBlock.message.blocks
+    extractBlockLinksFromMessageBlock messageBlock = concatMap (extractBlockLinks workspaceName) messageBlock.message.blocks
 
 -- | Merge metadata by URL.
 --
@@ -156,8 +165,8 @@ handleMessage msg teamId = do
   workspaceE@(Entity workspaceId workspace) <- workspaceByTeamId teamId
   case ev.channelType of
     Channel -> do
-      let blockLinks = concatMap extractBlockLinks $ fromMaybe [] ev.blocks
-          attachedLinks = concatMap extractAttachedLinks $ mapMaybe decoded (fromMaybe [] ev.attachments)
+      let blockLinks = concatMap (extractBlockLinks workspace.slackSubdomain) $ fromMaybe [] ev.blocks
+          attachedLinks = concatMap (extractAttachedLinks workspace.slackSubdomain) $ mapMaybe decoded (fromMaybe [] ev.attachments)
           rawLinks = mconcat $ extractLinksFromJson workspace.slackSubdomain <$> maybe [] (map raw) ev.attachments
           links = mergeLinkDestinations $ blockLinks <> attachedLinks <> mapMaybe splitSlackUrl rawLinks
           linkSource = extractableMessageToSlackUrlParts workspace.slackSubdomain ev
