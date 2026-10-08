@@ -12,11 +12,13 @@ import OpenTelemetry.Context qualified as Context
 import OpenTelemetry.Context.ThreadLocal qualified as Context
 import OpenTelemetry.Processor.Span (ShutdownResult (..), SpanProcessor (..))
 import OpenTelemetry.Trace.Core qualified as OTel
+import OpenTelemetry.Trace.Id.Generator.Default (defaultIdGenerator)
 import OpenTelemetry.Trace.Sampler (alwaysOn)
 import OpenTelemetry.Util (appendOnlyBoundedCollectionSize)
 import Slacklinker.App (App (..), runAppM, runDB)
 import Slacklinker.Models
-import Slacklinker.Sender (doUpdateReply)
+import Slacklinker.Sender (doUpdateReply, handleTodo)
+import Slacklinker.Sender.Types (SenderEnvelope (..), SenderRequest (..), Terminate, queueWaitMilliseconds)
 import Test.HUnit.Lang (HUnitFailure)
 import TestApp (withApp)
 import TestImport
@@ -28,7 +30,58 @@ data Result = Success | SlackFailure | PersistenceFailure
   deriving stock (Eq, Show)
 
 spec :: Spec
-spec = withApp $ describe "UpdateReply telemetry" do
+spec = do
+  describe "sender queue wait" do
+    it "converts nanoseconds to fractional milliseconds, including at large clock readings" do
+      for_ [0, 2 ^ (60 :: Int)] \start ->
+        for_ [(0, 0), (1, 0.000001), (125_000, 0.125), (1_250_000, 1.25), (2_000_000_000, 2000)] \(elapsed, expected) ->
+          queueWaitMilliseconds start (start + elapsed) `shouldBe` expected
+
+    -- The production tracing wrapper uses the global provider.
+    sequential $ withApp $ it "exports wait on the job span, even on failure, retaining execution timing and parentage" \app ->
+      withSenderSpans \tracer finished ->
+        OTel.inSpan' tracer "producer" OTel.defaultSpanArguments \parent -> do
+          otelContext <- Context.getContext
+          let envelope = SenderEnvelope {otelContext, request = RequestTerminate, enqueuedAtNSec = 10_000_000}
+          executionStart <- OTel.getTimestamp
+          result <- try @IO @Terminate $ runAppM app $ handleTodo 11_250_000 envelope
+          executionEnd <- OTel.getTimestamp
+          result `shouldSatisfy` isLeft
+          absent parent "queue.wait_ms"
+          exported <- readIORef finished
+          map OTel.spanName exported `shouldBe` ["RequestTerminate"]
+          for_ exported \span -> do
+            Attr.lookupAttribute span.spanAttributes "queue.wait_ms" `shouldBe` Just (Attr.toAttribute (1.25 :: Double))
+            Attr.getDropped span.spanAttributes `shouldBe` 0
+            span.spanStart `shouldSatisfy` (>= executionStart)
+            span.spanEnd `shouldSatisfy` maybe False (\end -> end >= span.spanStart && end <= executionEnd)
+            parentContext <- OTel.getSpanContext parent
+            traverse OTel.getSpanContext span.spanParent >>= (`shouldBe` Just parentContext)
+
+  updateReplySpec
+
+{- | Record production job spans with an isolated provider, restoring global and
+thread-local tracing state even when an assertion fails.
+-}
+withSenderSpans :: (OTel.Tracer -> IORef [OTel.ImmutableSpan] -> IO ()) -> IO ()
+withSenderSpans action = bracket Context.getContext (void . Context.attachContext) \_ -> do
+  finished <- newIORef []
+  let processor =
+        SpanProcessor
+          { spanProcessorOnStart = \_ _ -> pure ()
+          , spanProcessorOnEnd = \ref -> readIORef ref >>= \s -> modifyIORef' finished (s :)
+          , spanProcessorShutdown = async $ pure ShutdownSuccess
+          , spanProcessorForceFlush = pure ()
+          }
+  bracket
+    (OTel.createTracerProvider [processor] OTel.emptyTracerProviderOptions {OTel.tracerProviderOptionsSampler = alwaysOn, OTel.tracerProviderOptionsIdGenerator = defaultIdGenerator})
+    OTel.shutdownTracerProvider
+    \provider -> bracket OTel.getGlobalTracerProvider OTel.setGlobalTracerProvider \_ -> do
+      OTel.setGlobalTracerProvider provider
+      action (OTel.makeTracer provider "sender-test" OTel.tracerOptions) finished
+
+updateReplySpec :: Spec
+updateReplySpec = withApp $ describe "UpdateReply telemetry" do
   for_ [("create", Nothing, "/api/chat.postMessage"), ("update", Just "1700000001.000001", "/api/chat.update")] \(action, previousTs, endpoint) -> do
     for_ [Success, SlackFailure, PersistenceFailure] \result ->
       it (unpack action <> ": " <> show result) \app -> do

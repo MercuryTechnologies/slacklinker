@@ -7,6 +7,7 @@ module Slacklinker.Sender (
   runSlack,
   senderHandler,
   senderThread,
+  handleTodo,
   doUpdateReply,
 ) where
 
@@ -14,6 +15,7 @@ import Data.Text (splitOn)
 import Data.Vector qualified as V
 import Database.Esqueleto.Experimental qualified as E
 import Database.Persist
+import GHC.Clock (getMonotonicTimeNSec)
 import Generics.Deriving.ConNames (conNameOf)
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import OpenTelemetry.Trace.Core qualified as OTel
@@ -231,50 +233,58 @@ doUpdateReply span r = do
               }
           )
 
-handleTodo :: SenderRequest -> AppM ()
-handleTodo r =
+{- | Execute a dequeued job under its already attached trace context. Record the
+wait ending at the supplied monotonic dequeue time on the execution span;
+the span's own duration continues to measure execution only.
+-}
+handleTodo :: Word64 -> SenderEnvelope -> AppM ()
+handleTodo dequeuedAtNSec SenderEnvelope {request = r, enqueuedAtNSec} =
   let conName = conNameOf r
-   in inSpanAt SenderJob (cs conName) defaultSpanArguments \span -> case r of
-        SendMessage req -> do
-          addAttribute span SemConv.slackChannel req.channel.unConversationId
-          doSendMessage req
-        JoinChannel workspaceInfo conversation -> do
-          addAttribute span SemConv.slackChannel conversation.unConversationId
-          addWorkspaceInfo span workspaceInfo
-          doJoinChannel workspaceInfo conversation
-        ReqJoinAll workspaceInfo conversation -> do
-          addWorkspaceInfo span workspaceInfo
-          doJoinAll workspaceInfo conversation
-        ReqUpdateJoined workspaceInfo conversation -> do
-          addWorkspaceInfo span workspaceInfo
-          doUpdateJoined workspaceInfo conversation
-        UpdateReply replyId -> do
-          doUpdateReply span replyId
-        ReqUploadUserData workspaceInfo conversation files -> do
-          doUploadUserData workspaceInfo conversation files
-        UpdateAppHome workspaceInfo user -> do
-          doUpdateUser'sAppHome workspaceInfo user
-        ReqUpdateLinearTeams workspaceInfo conversation -> do
-          updateLinearTeamsCache workspaceInfo.workspaceId
-          doSendMessage
-            SendMessageReq
-              { replyToTs = Nothing
-              , channel = conversation
-              , messageContent = "Done!"
-              , workspaceMeta = workspaceInfo
-              }
-        BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets -> do
-          addWorkspaceInfo span workspaceInfo
-          doBacklinkLinearTickets span workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
-        RequestTerminate -> throwIO Terminate
+   in inSpanAt SenderJob (cs conName) defaultSpanArguments \span -> do
+        addAttribute span "queue.wait_ms" $ queueWaitMilliseconds enqueuedAtNSec dequeuedAtNSec
+        case r of
+          SendMessage req -> do
+            addAttribute span SemConv.slackChannel req.channel.unConversationId
+            doSendMessage req
+          JoinChannel workspaceInfo conversation -> do
+            addAttribute span SemConv.slackChannel conversation.unConversationId
+            addWorkspaceInfo span workspaceInfo
+            doJoinChannel workspaceInfo conversation
+          ReqJoinAll workspaceInfo conversation -> do
+            addWorkspaceInfo span workspaceInfo
+            doJoinAll workspaceInfo conversation
+          ReqUpdateJoined workspaceInfo conversation -> do
+            addWorkspaceInfo span workspaceInfo
+            doUpdateJoined workspaceInfo conversation
+          UpdateReply replyId -> do
+            doUpdateReply span replyId
+          ReqUploadUserData workspaceInfo conversation files -> do
+            doUploadUserData workspaceInfo conversation files
+          UpdateAppHome workspaceInfo user -> do
+            doUpdateUser'sAppHome workspaceInfo user
+          ReqUpdateLinearTeams workspaceInfo conversation -> do
+            updateLinearTeamsCache workspaceInfo.workspaceId
+            doSendMessage
+              SendMessageReq
+                { replyToTs = Nothing
+                , channel = conversation
+                , messageContent = "Done!"
+                , workspaceMeta = workspaceInfo
+                }
+          BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets -> do
+            addWorkspaceInfo span workspaceInfo
+            doBacklinkLinearTickets span workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
+          RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span workspaceInfo = addAttribute span SemConv.slackTeamId workspaceInfo.slackTeamId.unTeamId
 
+-- | Dequeue jobs, capture the end of their queue wait, then execute them.
 senderThread :: AppM ()
 senderThread = forever $ do
-  SenderEnvelope {request, otelContext} <- atomically $ readTChan senderChan
+  envelope@SenderEnvelope {request, otelContext} <- atomically $ readTChan senderChan
+  dequeuedAtNSec <- liftIO getMonotonicTimeNSec
   void $ OTel.attachContext otelContext
 
   logDebug $ "SENDER: " <> tshow request
 
-  handleTodo request `catch` senderHandler "senderThread"
+  handleTodo dequeuedAtNSec envelope `catch` senderHandler "senderThread"

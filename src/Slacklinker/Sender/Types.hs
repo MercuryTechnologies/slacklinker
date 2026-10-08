@@ -1,6 +1,7 @@
 module Slacklinker.Sender.Types where
 
 import Database.Persist
+import GHC.Clock (getMonotonicTimeNSec)
 import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import Slacklinker.Import
@@ -39,15 +40,28 @@ data SendMessageReq = SendMessageReq
   }
   deriving stock (Show)
 
+-- | An in-process job with its originating trace context and queue timing.
 data SenderEnvelope = SenderEnvelope
   { otelContext :: OTel.Context
   , request :: SenderRequest
+  , enqueuedAtNSec :: Word64
+  -- ^ Monotonic nanoseconds sampled after context capture, before queue insertion.
   }
 
+-- | Capture context and then the enqueue timestamp; insert the result immediately.
 mkSenderEnvelope :: (MonadIO m) => SenderRequest -> m SenderEnvelope
 mkSenderEnvelope request = do
   otelContext <- OTel.getContext
-  pure SenderEnvelope {otelContext, request}
+  enqueuedAtNSec <- liftIO getMonotonicTimeNSec
+  pure SenderEnvelope {otelContext, request, enqueuedAtNSec}
+
+{- | Convert enqueue and dequeue monotonic nanoseconds to milliseconds.
+Subtract before converting to preserve short waits at large clock readings.
+Both readings must come from the same process, in enqueue/dequeue order.
+-}
+queueWaitMilliseconds :: Word64 -> Word64 -> Double
+queueWaitMilliseconds enqueuedAtNSec dequeuedAtNSec =
+  fromIntegral (dequeuedAtNSec - enqueuedAtNSec) / 1_000_000
 
 data SenderRequest
   = SendMessage SendMessageReq
@@ -90,6 +104,11 @@ data Terminate = Terminate deriving stock (Show)
 
 instance Exception Terminate
 
+{- | Enqueue a job with its current trace context. Queue wait starts at the
+monotonic clock read in 'mkSenderEnvelope', after context capture and immediately
+before the write transaction. It includes transaction and scheduling overhead
+until the clock read immediately after dequeue, but excludes job execution.
+-}
 senderEnqueue :: (MonadIO m) => SenderRequest -> m ()
 senderEnqueue req = do
   message <- mkSenderEnvelope req
