@@ -250,6 +250,22 @@ spec = do
           threads <- runDB $ selectList [RepliedThreadWorkspaceId ==. wsId] []
           liftIO $ map ((.threadTs) . entityVal) threads `shouldBe` [fromJust parts.threadTs]
 
+    it "records one backlink when links and mentions target the same thread" \app -> do
+      let (parentUrl, parentParts) = sampleUrl
+          (childUrl, childParts) = sampleUrlToChild
+          linkItem url = Aeson.object ["type" .= ("link" :: Text), "url" .= url]
+          block = richTextBlock "rich_text_section" [mention childParts Nothing, linkItem childUrl, linkItem parentUrl]
+      msg <- decodeMessage [block] [attachmentWithBlock $ richTextBlock "rich_text_quote" [mention childParts (Just childUrl)]]
+      runAppM app do
+        (wsId, teamId) <- createWorkspace
+        handleMessage msg teamId
+        [Entity rtId thread] <- runDB $ selectList [RepliedThreadWorkspaceId ==. wsId] []
+        links <- runDB $ selectList [LinkedMessageRepliedThreadId ==. rtId] []
+        liftIO do
+          thread.conversationId `shouldBe` parentParts.channelId
+          thread.threadTs `shouldBe` parentParts.messageTs
+          map ((.messageTs) . entityVal) links `shouldBe` [msg.ts]
+
     let (_, parentParts) = sampleUrl
         (_, childParts) = sampleUrlToChild
     forM_
