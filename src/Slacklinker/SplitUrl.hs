@@ -34,10 +34,17 @@ data SlackUrlParts = SlackUrlParts
   }
   deriving stock (Show)
 
+{- | Build a channel URL from a workspace subdomain (without @.slack.com@) and
+a conversation ID. Does not validate or escape either identifier.
+-}
+buildSlackChannelUrl :: Text -> ConversationId -> Text
+buildSlackChannelUrl workspaceName channelId =
+  "https://" <> workspaceName <> ".slack.com/archives/" <> channelId.unConversationId
+
 buildSlackUrl :: SlackUrlParts -> Maybe Text
 buildSlackUrl SlackUrlParts {..} = do
   messageTsP <- messageTsToP messageTs
-  pure $ "https://" <> workspaceName <> ".slack.com/archives/" <> channelId.unConversationId <> "/" <> messageTsP <> threadTsPart
+  pure $ buildSlackChannelUrl workspaceName channelId <> "/" <> messageTsP <> threadTsPart
   where
     -- due to mysterious jackage at slack dot com, you need to put the channel ID
     -- twice, or else the previewer will not work properly. No idea why.
