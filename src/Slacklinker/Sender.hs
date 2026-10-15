@@ -54,7 +54,7 @@ senderHandler loc e = do
 
 doJoinChannel :: (MonadIO m, HasApp m) => WorkspaceMeta -> ConversationId -> m ()
 doJoinChannel ws conversation = do
-  joinResp <- runSlack ws.token \slackConfig ->
+  joinResp <- runSlackRequest ws (JoinConversation conversation) \slackConfig ->
     conversationsJoin slackConfig $ Conversation.JoinReq {Conversation.joinReqChannel = conversation}
   let name = case joinResp.joinRspChannel of
         Channel c -> Just c.channelName
@@ -180,10 +180,10 @@ doUpdateReply :: (HasApp m, MonadIO m) => RepliedThreadId -> m ()
 doUpdateReply r = do
   -- FIXME(jadel): do locking in case someone happens to run a high
   -- availability slack bot cluster
-  (repliedThread, workspace, links) <- runDB $ do
+  (repliedThread, workspaceEntity@(Entity _ workspace), links) <- runDB $ do
     repliedThread <- getJust r
     links <- E.select $ linkedMessagesInThread r
-    Entity _ workspace <-
+    workspace <-
       E.selectOne (workspaceByRepliedThreadId r)
         >>= flip orThrow (SlacklinkerBug "workspace does not exist for a replied thread ID")
     pure (repliedThread, workspace, links)
@@ -192,7 +192,7 @@ doUpdateReply r = do
 
   ts <-
     sendOrReplaceSlackMessage
-      workspace.slackOauthToken
+      (workspaceMetaFromWorkspaceE workspaceEntity)
       (repliedThread.conversationId, repliedThread.threadTs, repliedThread.replyTs)
       message
 
@@ -202,16 +202,16 @@ doUpdateReply r = do
       [LinkedMessageId <-. ((\(x, _, _) -> entityKey x) <$> links)]
       [LinkedMessageSent =. True]
   where
-    sendOrReplaceSlackMessage token (conversationId, _threadTs, Just ts) content =
-      updateRspTs <$> runSlack token \slackConfig ->
+    sendOrReplaceSlackMessage workspaceInfo (conversationId, _threadTs, Just ts) content =
+      updateRspTs <$> runSlackRequest workspaceInfo (UpdateMessage UpdateMessageContext {channel = conversationId, messageTs = ts}) \slackConfig ->
         chatUpdate
           slackConfig
           ( (mkUpdateReq conversationId ts)
               { updateReqText = Just content
               }
           )
-    sendOrReplaceSlackMessage token (conversationId, threadTs, Nothing) content =
-      postMsgRspTs <$> runSlack token \slackConfig ->
+    sendOrReplaceSlackMessage workspaceInfo (conversationId, threadTs, Nothing) content =
+      postMsgRspTs <$> runSlackRequest workspaceInfo (PostMessage PostMessageContext {channel = conversationId, threadTs = Just threadTs}) \slackConfig ->
         chatPostMessage
           slackConfig
           ( (mkPostMsgReq conversationId.unConversationId content)

@@ -17,6 +17,8 @@ data WorkspaceMeta = WorkspaceMeta
   { token :: SlackToken
   , workspaceId :: WorkspaceId
   , slackTeamId :: TeamId
+  , slackSubdomain :: Text
+  -- ^ Workspace subdomain, without @.slack.com@, used to build request error links.
   }
   deriving stock (Show)
 
@@ -24,6 +26,7 @@ workspaceMetaFromWorkspaceE :: Entity Workspace -> WorkspaceMeta
 workspaceMetaFromWorkspaceE (Entity wsId ws) =
   WorkspaceMeta
     { slackTeamId = ws.slackTeamId
+    , slackSubdomain = ws.slackSubdomain
     , workspaceId = wsId
     , token = ws.slackOauthToken
     }
