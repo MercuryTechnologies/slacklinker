@@ -147,6 +147,22 @@
               });
             };
           };
+
+          # 0.9.0+ honours sslmode=require, so migrations work when the
+          # database rejects non-TLS connections. Drop once nixpkgs has 0.9+.
+          refinery-cli = super.refinery-cli.overrideAttrs (old: rec {
+            version = "0.10.0";
+            src = super.fetchCrate {
+              pname = "refinery_cli";
+              inherit version;
+              hash = "sha256-fXCzsTWm6z85XrqailzNfJ6DFLyX2YvESH4K720JSgY=";
+            };
+            patches = [ ];
+            cargoDeps = super.rustPlatform.fetchCargoVendor {
+              inherit src;
+              hash = "sha256-wi36nJpShKInsZ5LpXJrE00D6V+7YCsfZLBhGIhCN2o=";
+            };
+          });
         };
       };
     };
