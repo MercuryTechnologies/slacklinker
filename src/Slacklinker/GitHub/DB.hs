@@ -1,18 +1,14 @@
 module Slacklinker.GitHub.DB where
 
 import Data.Set qualified as Set
-import Database.Esqueleto.Experimental hiding ((<&>))
-import Database.Persist qualified as P
+import Database.Esqueleto.Experimental
+import Database.Esqueleto.PostgreSQL (insertSelectWithConflict)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
 import Slacklinker.GitHub.Types (RepoName (..))
 import Slacklinker.Models
-import Slacklinker.Prelude
+import Slacklinker.Prelude hiding ((<&>))
 
--- | Every Slack message linking the pull request, with its channel and workspace.
-linksForPullRequest ::
-  (MonadIO m) =>
-  GithubPullRequestId ->
-  SqlPersistT m [(Entity LinkedGithubPullRequest, Entity JoinedChannel, Entity Workspace)]
+linksForPullRequest :: (MonadIO m) => GithubPullRequestId -> SqlPersistT m [(Entity LinkedGithubPullRequest, Entity JoinedChannel, Entity Workspace)]
 linksForPullRequest prId = select do
   (linked :& channel :& workspace) <-
     from
@@ -24,19 +20,19 @@ linksForPullRequest prId = select do
   where_ $ linked.pullRequestId ==. val prId
   pure (linked, channel, workspace)
 
--- | The (owner, name) pairs among the given PRs' repos that have webhooks set up.
 knownGithubRepos :: (MonadIO m) => [RepoName] -> SqlPersistT m (Set RepoName)
+knownGithubRepos [] = pure mempty
 knownGithubRepos names = do
   repos <- select do
     repo <- from $ table @GithubRepo
-    where_ $ repo.owner `in_` valList (ordNub $ (.owner) <$> names)
+    where_ . foldr (||.) (val False) $ (\n -> repo.owner ==. val n.owner &&. repo.name ==. val n.name) <$> names
     pure (repo.owner, repo.name)
-  pure . Set.fromList $ repos <&> \(Value owner, Value name) -> RepoName {owner, name}
+  pure . Set.fromList $ (\(Value owner, Value name) -> RepoName {owner, name}) <$> repos
 
 -- | Records that a repo has webhooks. Safe against concurrent deliveries.
 registerGithubRepo :: (MonadIO m) => RepoName -> SqlPersistT m GithubRepoId
 registerGithubRepo RepoName {owner, name} = do
-  rawExecute "insert into github_repos (owner, name) values (?, ?) on conflict do nothing" [P.toPersistValue owner, P.toPersistValue name]
-  P.getBy (UniqueGithubRepo owner name) >>= \case
+  insertSelectWithConflict UniqueGithubRepo (pure $ GithubRepo <# val owner <&> val name) (\_ _ -> [])
+  getBy (UniqueGithubRepo owner name) >>= \case
     Just repo -> pure $ entityKey repo
     Nothing -> throwIO $ SlacklinkerBug "github repo missing after insert"

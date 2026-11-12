@@ -28,3 +28,7 @@ spec = withApp $ describe "GitHub PR tracking DB" do
   it "registers a repo idempotently" \app -> runAppM app do
     (a, b) <- runDB $ (,) <$> registerGithubRepo (RepoName "foo" "bar") <*> registerGithubRepo (RepoName "foo" "bar")
     liftIO $ a `shouldBe` b
+
+  it "finds no known repos for no names" \app -> runAppM app do
+    known <- runDB $ insert_ GithubRepo {owner = "foo", name = "bar"} >> knownGithubRepos []
+    liftIO $ known `shouldBe` mempty

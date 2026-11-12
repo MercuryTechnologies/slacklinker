@@ -22,30 +22,21 @@ prQuery =
     , "}"
     ]
 
--- | Fetches the current state of a pull request.
 fetchPrState :: (HasApp m, MonadIO m) => GithubToken -> PrRef -> m (Either Text PrState)
 fetchPrState (GithubToken token) ref = do
   manager <- getsApp (.manager)
   req0 <- liftIO $ parseRequest "https://api.github.com/graphql"
-  let body =
-        object
-          [ "query" .= prQuery
-          , "variables" .= object ["owner" .= ref.repo.owner, "name" .= ref.repo.name, "number" .= ref.number]
-          ]
-      req =
-        req0
-          { method = "POST"
-          , requestHeaders =
-              [ (hAuthorization, "Bearer " <> encodeUtf8 token)
-              , (hUserAgent, "slacklinker")
-              , (hContentType, "application/json")
-              ]
-          , requestBody = RequestBodyLBS (encode body)
-          }
+  let requestHeaders =
+        [ (hAuthorization, "Bearer " <> encodeUtf8 token)
+        , (hUserAgent, "slacklinker")
+        , (hContentType, "application/json")
+        ]
+      body = object ["query" .= prQuery, "variables" .= object ["owner" .= ref.repo.owner, "name" .= ref.repo.name, "number" .= ref.number]]
+      requestBody = RequestBodyLBS $ encode body
+      req = req0 {method = "POST", requestHeaders, requestBody}
   resp <- liftIO $ httpLbs req manager
   pure $ prStateFromHttp (statusCode $ responseStatus resp) (responseBody resp)
 
--- | Interprets an HTTP response to 'prQuery'.
 prStateFromHttp :: Int -> LByteString -> Either Text PrState
 prStateFromHttp 200 body = mapLeft pack (eitherDecode body) >>= prStateFromResponse
 prStateFromHttp code body = Left $ "GitHub returned HTTP " <> tshow code <> ": " <> maybe (take 200 . decodeUtf8 $ toStrict body) (.message) (decode @GhError body)
@@ -63,8 +54,7 @@ prStateFromResponse resp = case resp.responseData >>= (.repository) >>= (.pullRe
         | pr.isDraft -> PrDraft
         | otherwise -> PrOpened
 
-    -- reviewDecision is null when the branch doesn't require reviews, so fall
-    -- back to the latest review from each writer.
+    -- reviewDecision is null when the branch doesn't require reviews, so fall back to the latest review from each writer.
     toReview (Just DecisionApproved) _ = ReviewApproved
     toReview (Just DecisionChangesRequested) _ = ReviewChangesRequested
     toReview (Just DecisionReviewRequired) _ = ReviewNone
