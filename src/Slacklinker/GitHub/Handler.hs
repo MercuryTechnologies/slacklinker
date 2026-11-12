@@ -61,9 +61,8 @@ data GithubWebhookPayload = GithubWebhookPayload
 
 deriveFromJSON snakeCaseOptions ''GithubWebhookPayload
 
--- | Lowercased (owner, name) of the payload's repo.
-payloadRepo :: GithubWebhookPayload -> Maybe (Text, Text)
-payloadRepo payload = payload.repository <&> \r -> (T.toLower r.owner.login, T.toLower r.name)
+payloadRepo :: GithubWebhookPayload -> Maybe RepoName
+payloadRepo payload = payload.repository <&> \r -> mkRepoName r.owner.login r.name
 
 verifyGithubSignature :: GithubWebhookSecret -> Text -> ByteString -> Bool
 verifyGithubSignature (GithubWebhookSecret secret) header body = fromMaybe False do
@@ -88,8 +87,8 @@ postGithubWebhookR event signature body = do
   creds <- getsApp (.config.githubCreds) >>= (`orThrow` GithubDisabled)
   unless (verifyGithubSignature creds.webhookSecret signature body) $ throwIO GithubBadSignature
   payload :: GithubWebhookPayload <- decodeThrow body
-  for_ (payloadRepo payload) \(owner, name) -> do
-    repoId <- runDB $ registerGithubRepo owner name
+  for_ (payloadRepo payload) \repoName -> do
+    repoId <- runDB $ registerGithubRepo repoName
     when (changesPrState event payload.action) $ for_ payload.pullRequest \pr -> do
       mPr <- runDB . P.getBy $ UniqueGithubPullRequest repoId pr.number
       for_ mPr $ senderEnqueue . RefreshGithubPr . entityKey

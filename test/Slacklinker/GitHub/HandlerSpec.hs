@@ -2,7 +2,7 @@ module Slacklinker.GitHub.HandlerSpec where
 
 import Data.Aeson (eitherDecode)
 import Slacklinker.GitHub.Handler (GhPullRequestRef (..), GithubWebhookPayload (..), changesPrState, payloadRepo, verifyGithubSignature)
-import Slacklinker.GitHub.Types (GithubWebhookSecret (..))
+import Slacklinker.GitHub.Types (GithubWebhookSecret (..), RepoName (..))
 import TestImport
 
 spec :: Spec
@@ -23,11 +23,11 @@ spec = do
     it "parses a pull request event" do
       summarize
         <$> eitherDecode "{\"action\":\"enqueued\",\"pull_request\":{\"number\":5},\"repository\":{\"name\":\"Bar\",\"owner\":{\"login\":\"Foo\"}}}"
-        `shouldBe` Right (Just ("foo", "bar"), Just 5, Just "enqueued")
+        `shouldBe` Right (Just (RepoName "foo" "bar"), Just 5, Just "enqueued")
     it "parses a ping" do
       summarize
         <$> eitherDecode "{\"zen\":\"hi\",\"repository\":{\"name\":\"bar\",\"owner\":{\"login\":\"foo\"}}}"
-        `shouldBe` Right (Just ("foo", "bar"), Nothing, Nothing)
+        `shouldBe` Right (Just (RepoName "foo" "bar"), Nothing, Nothing)
 
   describe "Which webhooks refresh a PR" do
     it "refreshes on state changes" do

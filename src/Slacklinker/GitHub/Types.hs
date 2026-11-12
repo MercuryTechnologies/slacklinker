@@ -3,6 +3,7 @@
 -- | Types for the GitHub pull request tracking integration.
 module Slacklinker.GitHub.Types where
 
+import Data.Text qualified as T
 import Slacklinker.Import
 import Slacklinker.Persist.DeriveEnum (derivePostgresEnumForSumType)
 
@@ -22,8 +23,13 @@ data GithubCreds = GithubCreds
   }
   deriving stock (Show)
 
--- | A pull request reference. Owner and repo are lowercased.
-data PrRef = PrRef {owner :: Text, repo :: Text, number :: Int}
+data RepoName = RepoName {owner :: Text, name :: Text}
+  deriving stock (Show, Eq, Ord)
+
+mkRepoName :: Text -> Text -> RepoName
+mkRepoName owner name = RepoName {owner = T.toLower owner, name = T.toLower name}
+
+data PrRef = PrRef {repo :: RepoName, number :: Int}
   deriving stock (Show, Eq, Ord)
 
 data PrStatus = PrDraft | PrOpened | PrQueued | PrMerged | PrClosed

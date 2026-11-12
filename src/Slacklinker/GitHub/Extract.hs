@@ -1,11 +1,11 @@
 -- | Extracts GitHub pull request references from message text.
 module Slacklinker.GitHub.Extract (extractPrRefs) where
 
-import Data.Attoparsec.Text
+import Data.Attoparsec.Text hiding (number)
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Either.Combinators (rightToMaybe)
 import Data.Text qualified as T
-import Slacklinker.GitHub.Types (PrRef (..))
+import Slacklinker.GitHub.Types (PrRef (..), mkRepoName)
 import Slacklinker.Prelude hiding (takeWhile)
 
 isOwnerChar :: Char -> Bool
@@ -17,14 +17,14 @@ isRepoChar c = isOwnerChar c || c == '_' || c == '.'
 prRefP :: Parser PrRef
 prRefP = do
   owner <- takeWhile1 isOwnerChar
-  repo <- char '/' *> takeWhile1 isRepoChar
-  n <- string "/pull/" *> decimal
-  pure PrRef {owner = T.toLower owner, repo = T.toLower repo, number = n}
+  name <- char '/' *> takeWhile1 isRepoChar
+  number <- string "/pull/" *> decimal
+  pure PrRef {repo = mkRepoName owner name, number}
 
 {- | Finds @https://github.com/owner/repo/pull/123@ links in text, deduplicated.
 
 >>> extractPrRefs "see <https://github.com/Foo/bar/pull/12|this>"
-[PrRef {owner = "foo", repo = "bar", number = 12}]
+[PrRef {repo = RepoName {owner = "foo", name = "bar"}, number = 12}]
 -}
 extractPrRefs :: Text -> [PrRef]
 extractPrRefs text = ordNub $ mapMaybe parsePiece candidates

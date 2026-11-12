@@ -6,7 +6,7 @@ import Slacklinker.App (App (..), AppConfig (..), HasApp (..), runDB)
 import Slacklinker.Extract.Types (ExtractedMessageData (..))
 import Slacklinker.GitHub.DB (knownGithubRepos)
 import Slacklinker.GitHub.Extract (extractPrRefs)
-import Slacklinker.GitHub.Types (PrRef (..))
+import Slacklinker.GitHub.Types (PrRef (..), RepoName)
 import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Sender.Types (SenderRequest (..), senderEnqueue, workspaceMetaFromWorkspaceE)
@@ -14,8 +14,8 @@ import Slacklinker.Sender.Types (SenderRequest (..), senderEnqueue, workspaceMet
 {- | The message's only PR from a repo with webhooks. Messages linking several
 are skipped: they'd share one set of reactions.
 -}
-singleTrackableRef :: Set (Text, Text) -> [PrRef] -> Maybe PrRef
-singleTrackableRef known refs = case filter (\r -> (r.owner, r.repo) `Set.member` known) refs of
+singleTrackableRef :: Set RepoName -> [PrRef] -> Maybe PrRef
+singleTrackableRef known refs = case filter ((`Set.member` known) . (.repo)) refs of
   [ref] -> Just ref
   _ -> Nothing
 
@@ -27,7 +27,7 @@ handleGithubChannelMessage workspaceE (Entity joinedChannelId joinedChannel) mes
   configured <- isJust <$> getsApp (.config.githubCreds)
   let refs = extractPrRefs messageData.text
   when (configured && joinedChannel.trackGithubPrs && not (null refs)) do
-    known <- runDB $ knownGithubRepos refs
+    known <- runDB . knownGithubRepos $ (.repo) <$> refs
     for_ (singleTrackableRef known refs)
       $ senderEnqueue
       . TrackGithubPr (workspaceMetaFromWorkspaceE workspaceE) joinedChannelId messageData.ts

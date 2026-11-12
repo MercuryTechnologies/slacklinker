@@ -30,7 +30,7 @@ fetchPrState (GithubToken token) ref = do
   let body =
         object
           [ "query" .= prQuery
-          , "variables" .= object ["owner" .= ref.owner, "name" .= ref.repo, "number" .= ref.number]
+          , "variables" .= object ["owner" .= ref.repo.owner, "name" .= ref.repo.name, "number" .= ref.number]
           ]
       req =
         req0

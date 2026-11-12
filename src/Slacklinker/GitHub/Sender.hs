@@ -30,7 +30,7 @@ getOrInsertPullRequest repoId number =
 doTrackGithubPr :: (HasApp m, MonadIO m) => JoinedChannelId -> Text -> PrRef -> m ()
 doTrackGithubPr joinedChannelId messageTs ref = do
   token <- getGithubToken
-  mRepo <- runDB . P.getBy $ UniqueGithubRepo ref.owner ref.repo
+  mRepo <- runDB . P.getBy $ UniqueGithubRepo ref.repo.owner ref.repo.name
   for_ mRepo \(Entity repoId _) ->
     fetchPrState token ref >>= \case
       Left err -> logWarn $ "Failed to fetch " <> tshow ref <> ": " <> err
@@ -57,7 +57,7 @@ doRefreshGithubPr prId = do
     mPr <- P.get prId
     for mPr \pr -> (\repo -> (pr, repo)) <$> P.getJust pr.repoId
   for_ mRow \(pr, repo) -> do
-    let ref = PrRef {owner = repo.owner, repo = repo.name, number = pr.number}
+    let ref = PrRef {repo = RepoName {owner = repo.owner, name = repo.name}, number = pr.number}
     fetchPrState token ref >>= \case
       Left err -> logWarn $ "Failed to fetch " <> tshow ref <> ": " <> err
       Right st -> syncAllLinks prId st
