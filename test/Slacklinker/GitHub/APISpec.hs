@@ -1,8 +1,8 @@
 module Slacklinker.GitHub.APISpec where
 
-import Data.Aeson (Value, object, (.=))
+import Data.Aeson (Value, encode, object, (.=))
 import Data.Either (isLeft)
-import Slacklinker.GitHub.API (prStateFromHttp, prStateFromResponse)
+import Slacklinker.GitHub.API (prStateFromHttp)
 import Slacklinker.GitHub.Types
 import TestImport
 
@@ -24,6 +24,9 @@ response state isDraft isInMergeQueue reviewDecision reviews =
                 ]
           ]
     ]
+
+prStateFromResponse :: Value -> Either Text PrState
+prStateFromResponse = prStateFromHttp 200 . encode
 
 spec :: Spec
 spec = describe "PR state from GraphQL" do

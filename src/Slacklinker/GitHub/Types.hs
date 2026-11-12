@@ -1,29 +1,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 -- | Types for the GitHub pull request tracking integration.
-module Slacklinker.GitHub.Types (
-  GithubToken (..),
-  GithubWebhookSecret (..),
-  GithubCreds (..),
-  PrRef (..),
-  PrStatus (..),
-  PrReview (..),
-  PrState (..),
-  prStatusEmoji,
-  prReviewEmoji,
-  shownReview,
-) where
+module Slacklinker.GitHub.Types where
 
 import Slacklinker.Import
 import Slacklinker.Persist.DeriveEnum (derivePostgresEnumForSumType)
 
--- | Token used to read pull requests from the GitHub API.
 newtype GithubToken = GithubToken {unGithubToken :: Text}
 
 instance Show GithubToken where
   show _ = "GithubToken REDACTED"
 
--- | Secret configured on GitHub webhooks, used to verify deliveries.
 newtype GithubWebhookSecret = GithubWebhookSecret {unGithubWebhookSecret :: ByteString}
 
 instance Show GithubWebhookSecret where
@@ -42,12 +29,12 @@ data PrRef = PrRef {owner :: Text, repo :: Text, number :: Int}
 data PrStatus = PrDraft | PrOpened | PrQueued | PrMerged | PrClosed
   deriving stock (Show, Eq, Ord, Enum, Bounded, Generic)
 
-$(derivePostgresEnumForSumType ''PrStatus "github_pr_status")
+derivePostgresEnumForSumType ''PrStatus "github_pr_status"
 
 data PrReview = ReviewNone | ReviewApproved | ReviewChangesRequested
   deriving stock (Show, Eq, Ord, Enum, Bounded, Generic)
 
-$(derivePostgresEnumForSumType ''PrReview "github_pr_review")
+derivePostgresEnumForSumType ''PrReview "github_pr_review"
 
 data PrState = PrState {status :: PrStatus, review :: PrReview}
   deriving stock (Show, Eq)
@@ -60,7 +47,6 @@ prStatusEmoji = \case
   PrMerged -> "pr-merged"
   PrClosed -> "pr-closed"
 
--- | The review to show as a reaction: none once the PR is merged or closed.
 shownReview :: PrState -> PrReview
 shownReview st
   | st.status `elem` [PrMerged, PrClosed] = ReviewNone

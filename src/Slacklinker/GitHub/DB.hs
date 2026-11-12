@@ -1,4 +1,4 @@
-module Slacklinker.GitHub.DB (linksForPullRequest, knownGithubRepos, registerGithubRepo) where
+module Slacklinker.GitHub.DB where
 
 import Data.Set qualified as Set
 import Database.Esqueleto.Experimental

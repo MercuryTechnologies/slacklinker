@@ -2,6 +2,9 @@ module Slacklinker.Import (
   module Slacklinker.Prelude,
   taggedOptions,
   snakeCaseOptions,
+  screamingSnakeCaseOptions,
+  dropConstructorPrefix,
+  renameField,
   snakeCaseFormOptions,
   AesonDecodeError (..),
   decodeThrow,
@@ -23,6 +26,21 @@ snakeCaseOptions =
     { A.fieldLabelModifier = A.camelTo2 '_'
     , A.constructorTagModifier = A.camelTo2 '_'
     }
+
+screamingSnakeCaseOptions :: A.Options
+screamingSnakeCaseOptions =
+  defaultOptions
+    { A.fieldLabelModifier = toUpper . A.camelTo2 '_'
+    , A.constructorTagModifier = toUpper . A.camelTo2 '_'
+    }
+
+dropConstructorPrefix :: String -> A.Options -> A.Options
+dropConstructorPrefix prefix opts = opts {A.constructorTagModifier = A.constructorTagModifier opts . strip}
+  where
+    strip tag = fromMaybe (error $ "dropConstructorPrefix: " <> tag <> " lacks prefix " <> prefix) (stripPrefix prefix tag)
+
+renameField :: String -> String -> A.Options -> A.Options
+renameField this that opts = opts {A.fieldLabelModifier = (\f -> if f == this then that else f) . A.fieldLabelModifier opts}
 
 snakeCaseFormOptions :: FormOptions
 snakeCaseFormOptions =

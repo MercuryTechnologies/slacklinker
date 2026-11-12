@@ -1,7 +1,7 @@
 module Slacklinker.GitHub.HandlerSpec where
 
 import Data.Aeson (eitherDecode)
-import Slacklinker.GitHub.Handler (GithubWebhookPayload (..), changesPrState, verifyGithubSignature)
+import Slacklinker.GitHub.Handler (GhPullRequestRef (..), GithubWebhookPayload (..), changesPrState, payloadRepo, verifyGithubSignature)
 import Slacklinker.GitHub.Types (GithubWebhookSecret (..))
 import TestImport
 
@@ -19,12 +19,15 @@ spec = do
       verifyGithubSignature secret "sha1=abc" "Hello, World!" `shouldBe` False
 
   describe "GitHub webhook payloads" do
+    let summarize p = (payloadRepo p, (.number) <$> p.pullRequest, p.action)
     it "parses a pull request event" do
-      eitherDecode "{\"action\":\"enqueued\",\"pull_request\":{\"number\":5},\"repository\":{\"name\":\"Bar\",\"owner\":{\"login\":\"Foo\"}}}"
-        `shouldBe` Right GithubWebhookPayload {repository = Just ("foo", "bar"), pullRequestNumber = Just 5, action = Just "enqueued"}
+      summarize
+        <$> eitherDecode "{\"action\":\"enqueued\",\"pull_request\":{\"number\":5},\"repository\":{\"name\":\"Bar\",\"owner\":{\"login\":\"Foo\"}}}"
+        `shouldBe` Right (Just ("foo", "bar"), Just 5, Just "enqueued")
     it "parses a ping" do
-      eitherDecode "{\"zen\":\"hi\",\"repository\":{\"name\":\"bar\",\"owner\":{\"login\":\"foo\"}}}"
-        `shouldBe` Right GithubWebhookPayload {repository = Just ("foo", "bar"), pullRequestNumber = Nothing, action = Nothing}
+      summarize
+        <$> eitherDecode "{\"zen\":\"hi\",\"repository\":{\"name\":\"bar\",\"owner\":{\"login\":\"foo\"}}}"
+        `shouldBe` Right (Just ("foo", "bar"), Nothing, Nothing)
 
   describe "Which webhooks refresh a PR" do
     it "refreshes on state changes" do

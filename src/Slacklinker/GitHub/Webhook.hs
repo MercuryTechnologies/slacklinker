@@ -1,5 +1,5 @@
 -- | Slack message handling for GitHub PR tracking.
-module Slacklinker.GitHub.Webhook (handleGithubChannelMessage, singleTrackableRef) where
+module Slacklinker.GitHub.Webhook where
 
 import Data.Set qualified as Set
 import Slacklinker.App (App (..), AppConfig (..), HasApp (..), runDB)

@@ -1,12 +1,11 @@
 -- | Minimal GitHub GraphQL client for reading pull request state.
-module Slacklinker.GitHub.API (fetchPrState, prStateFromHttp, prStateFromResponse) where
+module Slacklinker.GitHub.API (fetchPrState, prStateFromHttp) where
 
-import Control.Monad.Fail (fail)
-import Data.Aeson (Value, decode, eitherDecode, encode, object, (.:), (.:?), (.=))
-import Data.Aeson.Types (Parser, parseEither, parseMaybe)
+import Data.Aeson (decode, eitherDecode, encode, object, (.=))
 import Network.HTTP.Client (Request (..), RequestBody (..), httpLbs, parseRequest, responseBody, responseStatus)
 import Network.HTTP.Types (hAuthorization, hContentType, hUserAgent, statusCode)
 import Slacklinker.App (App (..), HasApp (..))
+import Slacklinker.GitHub.API.Types
 import Slacklinker.GitHub.Types
 import Slacklinker.Import
 
@@ -49,49 +48,27 @@ fetchPrState (GithubToken token) ref = do
 -- | Interprets an HTTP response to 'prQuery'.
 prStateFromHttp :: Int -> LByteString -> Either Text PrState
 prStateFromHttp 200 body = mapLeft pack (eitherDecode body) >>= prStateFromResponse
-prStateFromHttp code body = Left $ "GitHub returned HTTP " <> tshow code <> ": " <> fromMaybe (take 200 . decodeUtf8 $ toStrict body) message
-  where
-    message = decode body >>= parseMaybe (withObject "error" (.: "message"))
+prStateFromHttp code body = Left $ "GitHub returned HTTP " <> tshow code <> ": " <> maybe (take 200 . decodeUtf8 $ toStrict body) (.message) (decode @GhError body)
 
--- | Interprets a GraphQL response to 'prQuery'.
-prStateFromResponse :: Value -> Either Text PrState
-prStateFromResponse = mapLeft pack . parseEither parser
+prStateFromResponse :: GhResponse -> Either Text PrState
+prStateFromResponse resp = case resp.responseData >>= (.repository) >>= (.pullRequest) of
+  Nothing -> Left $ "no pull request in response; errors: " <> maybe "none" (decodeUtf8 . toStrict . encode) resp.errors
+  Just pr -> Right PrState {status = toStatus pr, review = toReview pr.reviewDecision ((.state) <$> pr.latestOpinionatedReviews.nodes)}
   where
-    parser :: Value -> Parser PrState
-    parser = withObject "response" \o -> do
-      mData <- o .:? "data"
-      mPr <- case mData of
-        Nothing -> pure Nothing
-        Just d -> do
-          mRepo <- d .:? "repository"
-          maybe (pure Nothing) (.:? "pullRequest") mRepo
-      case mPr of
-        Nothing -> do
-          errs <- o .:? "errors" :: Parser (Maybe Value)
-          fail $ "no pull request in response; errors: " <> maybe "none" show errs
-        Just pr -> do
-          state <- pr .: "state"
-          isDraft <- pr .: "isDraft"
-          isInMergeQueue <- pr .: "isInMergeQueue"
-          reviewDecision <- pr .:? "reviewDecision"
-          reviews <- pr .: "latestOpinionatedReviews" >>= (.: "nodes") >>= traverse (.: "state")
-          status <- case state :: Text of
-            "MERGED" -> pure PrMerged
-            "CLOSED" -> pure PrClosed
-            "OPEN"
-              | isInMergeQueue -> pure PrQueued
-              | isDraft -> pure PrDraft
-              | otherwise -> pure PrOpened
-            other -> fail $ "unknown pull request state " <> unpack other
-          pure PrState {status, review = toReview reviewDecision reviews}
+    toStatus pr = case pr.state of
+      GhMerged -> PrMerged
+      GhClosed -> PrClosed
+      GhOpen
+        | pr.isInMergeQueue -> PrQueued
+        | pr.isDraft -> PrDraft
+        | otherwise -> PrOpened
 
     -- reviewDecision is null when the branch doesn't require reviews, so fall
     -- back to the latest review from each writer.
-    toReview :: Maybe Text -> [Text] -> PrReview
-    toReview (Just "APPROVED") _ = ReviewApproved
-    toReview (Just "CHANGES_REQUESTED") _ = ReviewChangesRequested
-    toReview (Just _) _ = ReviewNone
-    toReview Nothing reviews
-      | "CHANGES_REQUESTED" `elem` reviews = ReviewChangesRequested
-      | "APPROVED" `elem` reviews = ReviewApproved
+    toReview (Just DecisionApproved) _ = ReviewApproved
+    toReview (Just DecisionChangesRequested) _ = ReviewChangesRequested
+    toReview (Just DecisionReviewRequired) _ = ReviewNone
+    toReview Nothing states
+      | StateChangesRequested `elem` states = ReviewChangesRequested
+      | StateApproved `elem` states = ReviewApproved
       | otherwise = ReviewNone

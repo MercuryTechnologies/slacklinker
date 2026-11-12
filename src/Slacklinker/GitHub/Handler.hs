@@ -1,11 +1,22 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
 -- | GitHub webhook endpoint.
-module Slacklinker.GitHub.Handler (Api, githubH, verifyGithubSignature, GithubWebhookPayload (..), changesPrState) where
+module Slacklinker.GitHub.Handler (
+  Api,
+  githubH,
+  verifyGithubSignature,
+  GithubWebhookPayload (..),
+  GhRepo (..),
+  GhOwner (..),
+  GhPullRequestRef (..),
+  payloadRepo,
+  changesPrState,
+) where
 
 import Crypto.Hash (SHA256, digestFromByteString)
 import Crypto.MAC.HMAC (HMAC (..), hmac)
-import Data.Aeson (Value (..), (.:), (.:?))
+import Data.Aeson (Value (..))
 import Data.ByteString.Base16 qualified as B16
 import Data.Either.Combinators (rightToMaybe)
 import Data.Text qualified as T
@@ -29,27 +40,31 @@ type Api =
     :> ReqBody '[JSONByteString] ByteString
     :> Post '[JSON] Value
 
+newtype GhOwner = GhOwner {login :: Text}
+
+deriveFromJSON defaultOptions ''GhOwner
+
+data GhRepo = GhRepo {name :: Text, owner :: GhOwner}
+
+deriveFromJSON defaultOptions ''GhRepo
+
+newtype GhPullRequestRef = GhPullRequestRef {number :: Int}
+
+deriveFromJSON defaultOptions ''GhPullRequestRef
+
 -- | The parts of a GitHub webhook payload we care about.
 data GithubWebhookPayload = GithubWebhookPayload
-  { repository :: Maybe (Text, Text)
-  -- ^ Lowercased (owner, name)
-  , pullRequestNumber :: Maybe Int
-  , action :: Maybe Text
+  { action :: Maybe Text
+  , repository :: Maybe GhRepo
+  , pullRequest :: Maybe GhPullRequestRef
   }
-  deriving stock (Show, Eq)
 
-instance FromJSON GithubWebhookPayload where
-  parseJSON = withObject "GithubWebhookPayload" \o -> do
-    repository <-
-      o .:? "repository" >>= traverse \r -> do
-        owner <- r .: "owner" >>= (.: "login")
-        name <- r .: "name"
-        pure (T.toLower owner, T.toLower name)
-    pullRequestNumber <- o .:? "pull_request" >>= traverse (.: "number")
-    action <- o .:? "action"
-    pure GithubWebhookPayload {..}
+deriveFromJSON snakeCaseOptions ''GithubWebhookPayload
 
--- | Checks an @X-Hub-Signature-256@ header (@sha256=<hex>@) in constant time.
+-- | Lowercased (owner, name) of the payload's repo.
+payloadRepo :: GithubWebhookPayload -> Maybe (Text, Text)
+payloadRepo payload = payload.repository <&> \r -> (T.toLower r.owner.login, T.toLower r.name)
+
 verifyGithubSignature :: GithubWebhookSecret -> Text -> ByteString -> Bool
 verifyGithubSignature (GithubWebhookSecret secret) header body = fromMaybe False do
   hex <- T.stripPrefix "sha256=" header
@@ -73,10 +88,10 @@ postGithubWebhookR event signature body = do
   creds <- getsApp (.config.githubCreds) >>= (`orThrow` GithubDisabled)
   unless (verifyGithubSignature creds.webhookSecret signature body) $ throwIO GithubBadSignature
   payload :: GithubWebhookPayload <- decodeThrow body
-  for_ payload.repository \(owner, name) -> do
+  for_ (payloadRepo payload) \(owner, name) -> do
     repoId <- runDB $ registerGithubRepo owner name
-    when (changesPrState event payload.action) $ for_ payload.pullRequestNumber \number -> do
-      mPr <- runDB . P.getBy $ UniqueGithubPullRequest repoId number
+    when (changesPrState event payload.action) $ for_ payload.pullRequest \pr -> do
+      mPr <- runDB . P.getBy $ UniqueGithubPullRequest repoId pr.number
       for_ mPr $ senderEnqueue . RefreshGithubPr . entityKey
   pure $ Object mempty
 
