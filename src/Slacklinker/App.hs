@@ -27,6 +27,7 @@ import Database.Persist.SqlBackend.SqlPoolHooks
 import Network.HTTP.Client (Manager)
 import Network.TLS.SSLKeyLogFile qualified as Keylog
 import OpenTelemetry.Instrumentation.Persistent qualified as OTel
+import Slacklinker.GitHub.Types (GithubCreds (..), GithubToken (..), GithubWebhookSecret (..))
 import Slacklinker.Import
 import Slacklinker.Linear.Types (LinearClientId (..), LinearClientSecret (..), LinearCreds (..))
 import Slacklinker.Types (SlackClientSecret (..), SlackToken (..))
@@ -42,6 +43,8 @@ data AppConfig = AppConfig
   {- ^ Credentials for a Linear API app.
   See <https://developers.linear.app/docs/oauth/authentication>
   -}
+  , githubCreds :: Maybe GithubCreds
+  -- ^ GitHub token and webhook secret for PR tracking. Disabled if absent.
   , slacklinkerHost :: Maybe Text
   {- ^ Host used for HTTPS URIs back to Slacklinker. This is required for the
   Linear integration to generate OAuth2 redirect URLs.
@@ -155,6 +158,10 @@ getConfiguration = do
   linearClientId <- fmap (LinearClientId . pack) <$> lookupEnv "LINEAR_CLIENT_ID"
   linearClientSecret <- fmap (LinearClientSecret . pack) <$> lookupEnv "LINEAR_CLIENT_SECRET"
   let linearCreds = LinearCreds <$> linearClientId <*> linearClientSecret
+
+  githubToken <- fmap (GithubToken . pack) <$> lookupEnv "GITHUB_TOKEN"
+  githubWebhookSecret <- fmap (GithubWebhookSecret . encodeUtf8 . pack) <$> lookupEnv "GITHUB_WEBHOOK_SECRET"
+  let githubCreds = GithubCreds <$> githubToken <*> githubWebhookSecret
 
   slacklinkerHost <- fmap cs <$> lookupEnv "SLACKLINKER_HOST"
 

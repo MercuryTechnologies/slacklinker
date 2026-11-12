@@ -22,6 +22,7 @@ import Slacklinker.App
 import Slacklinker.Exceptions
 import Slacklinker.Extract.FreeText (extractLinksFromJson)
 import Slacklinker.Extract.Types
+import Slacklinker.GitHub.Webhook (handleGithubChannelMessage)
 import Slacklinker.Handler.Webhook.ImCommand (handleImCommand)
 import Slacklinker.Import
 import Slacklinker.Linear.Webhook (handleLinearChannelMessage)
@@ -72,17 +73,20 @@ extractAttachedLinks workspaceName attachment = fromUrlLinks ++ blockLinks
     extractBlockLinksFromMessageBlock :: AttachmentMessageBlock -> [SlackUrlParts]
     extractBlockLinksFromMessageBlock messageBlock = concatMap (extractBlockLinks workspaceName) messageBlock.message.blocks
 
--- | Merge metadata by URL.
---
--- URLs for the same message can differ in whether they include thread metadata.
--- If two items have the same URL but one is missing a `threadTs`, drop the one
--- without the `threadTs`.
+{- | Merge metadata by URL.
+
+URLs for the same message can differ in whether they include thread metadata.
+If two items have the same URL but one is missing a `threadTs`, drop the one
+without the `threadTs`.
+-}
 mergeLinkDestinations :: [SlackUrlParts] -> [SlackUrlParts]
 mergeLinkDestinations =
-    -- Deduplicate threads.
-    nubBy sameThread
+  -- Deduplicate threads.
+  nubBy sameThread
     -- Deduplicate messages.
-    . Map.elems . Map.fromListWith preferThread . map keyed
+    . Map.elems
+    . Map.fromListWith preferThread
+    . map keyed
   where
     -- Here we extract a sense of 'message identity', intentionally ignoring
     -- the `threadTs` field.
@@ -91,8 +95,9 @@ mergeLinkDestinations =
     preferThread incoming existing = if isJust incoming.threadTs then incoming else existing
     sameThread a b = referencedThread a == referencedThread b
 
--- | A thread identity, used for ignoring links between messages in the same
--- thread.
+{- | A thread identity, used for ignoring links between messages in the same
+thread.
+-}
 data ThreadReference = ThreadReference
   { channelId :: ConversationId
   , threadTs :: Text
@@ -181,11 +186,9 @@ handleMessage msg teamId = do
       -- currently is database inserts, so I think they can/should be run in
       -- the same transaction.
       knownUserId <- recordUser workspaceId ev.user
-      joinedChannelId_ <-
-        runDB
-          $ insertBy
-            JoinedChannel {workspaceId, name = Nothing, channelId = ev.channel}
-      let joinedChannelId = either entityKey identity joinedChannelId_
+      let newJoinedChannel = JoinedChannel {workspaceId, name = Nothing, channelId = ev.channel, trackGithubPrs = False}
+      joinedChannelE <- either identity (`Entity` newJoinedChannel) <$> runDB (insertBy newJoinedChannel)
+      let joinedChannelId = entityKey joinedChannelE
 
       repliedThreadIds <- mapMaybeM (recordLink workspaceId knownUserId joinedChannelId linkSource) links
 
@@ -194,6 +197,7 @@ handleMessage msg teamId = do
       for_ repliedThreadIds $ senderEnqueue . UpdateReply
 
       handleLinearChannelMessage workspaceE knownUserId joinedChannelId ev
+      handleGithubChannelMessage workspaceE joinedChannelE ev
     Im -> do
       handleImCommand (workspaceMetaFromWorkspaceE workspaceE) ev.channel ev.text ev.files
     Group ->

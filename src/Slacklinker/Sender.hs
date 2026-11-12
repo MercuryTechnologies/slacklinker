@@ -20,6 +20,7 @@ import OpenTelemetry.Context.ThreadLocal qualified as OTel
 import OpenTelemetry.Trace.Core qualified as OTel
 import Slacklinker.App (AppM, HasApp (..), appSlackConfig, runDB)
 import Slacklinker.Exceptions (SlacklinkerBug (..))
+import Slacklinker.GitHub.Sender (doRefreshGithubPr, doTrackGithubPr)
 import Slacklinker.Import
 import Slacklinker.Linear.Sender (doBacklinkLinearTickets)
 import Slacklinker.Linear.Teams (updateLinearTeamsCache)
@@ -61,7 +62,7 @@ doJoinChannel ws conversation = do
         -- This case should never be hit since Slacklinker doesn't operate
         -- in DMs or groups.
         _ -> Nothing
-  runDB $ insert_ $ JoinedChannel {workspaceId = ws.workspaceId, channelId = conversation, name}
+  runDB $ insert_ $ JoinedChannel {workspaceId = ws.workspaceId, channelId = conversation, name, trackGithubPrs = False}
   pure ()
 
 fetchMemberConversations :: (HasApp m, MonadIO m) => WorkspaceMeta -> m (Vector Conversation)
@@ -89,7 +90,7 @@ doUpdateJoined workspaceInfo conversation = do
         void
           $ upsertBy
             (UniqueJoinedChannel workspaceInfo.workspaceId chan.channelId)
-            JoinedChannel {workspaceId = workspaceInfo.workspaceId, channelId = chan.channelId, name = Just chan.channelName}
+            JoinedChannel {workspaceId = workspaceInfo.workspaceId, channelId = chan.channelId, name = Just chan.channelName, trackGithubPrs = False}
             [JoinedChannelName =. Just chan.channelName]
       where
         channelsOnly (Channel c) = Just c
@@ -255,6 +256,11 @@ handleTodo r =
         BacklinkPlausibleLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets -> do
           addWorkspaceInfo span workspaceInfo
           doBacklinkLinearTickets workspaceInfo slackUrlParts joinedChannelId knownUserId tickets
+        TrackGithubPr workspaceInfo joinedChannelId messageTs ref -> do
+          addWorkspaceInfo span workspaceInfo
+          doTrackGithubPr joinedChannelId messageTs ref
+        RefreshGithubPr prId -> do
+          doRefreshGithubPr prId
         RequestTerminate -> throwIO Terminate
   where
     addWorkspaceInfo span workspaceInfo = addAttribute span "slack.team.id" workspaceInfo.slackTeamId.unTeamId

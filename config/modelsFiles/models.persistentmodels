@@ -18,6 +18,8 @@ JoinedChannel sql=joined_channels
   workspaceId WorkspaceId
   channelId ConversationId
   name Text Maybe
+  -- | Whether to react to GitHub PR links with their status
+  trackGithubPrs Bool default=false
   createdAt UTCTime MigrationOnly
   updatedAt UTCTime MigrationOnly
   UniqueJoinedChannel workspaceId channelId sql=joined_channels_workspace_channel_key
@@ -251,6 +253,45 @@ LinkedLinearTicket sql=linked_linear_tickets
   -- @unique_linked_linear_ticket_null@ to deal with NULL as a real value; see
   -- the migration file.
   UniqueLinkedLinearTicket linearOrganizationId linearTicketId joinedChannelId messageTs threadTs sql=unique_linked_linear_ticket !force
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | A GitHub repo that has sent us a verified webhook, so we will hear about
+-- updates to its pull requests.
+GithubRepo sql=github_repos
+  Id UUID default=uuid_generate_v1mc()
+  -- | Lowercased owner login
+  owner Text
+  -- | Lowercased repo name
+  name Text
+  UniqueGithubRepo owner name sql=unique_github_repo
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | A pull request linked from a tracked channel.
+GithubPullRequest sql=github_pull_requests
+  Id UUID default=uuid_generate_v1mc()
+  repoId GithubRepoId
+  number Int
+  UniqueGithubPullRequest repoId number sql=unique_github_pull_request
+
+  createdAt UTCTime MigrationOnly
+  updatedAt UTCTime MigrationOnly
+
+-- | A Slack message linking a pull request, with the reactions we have
+-- applied to it.
+LinkedGithubPullRequest sql=linked_github_pull_requests
+  Id UUID default=uuid_generate_v1mc()
+  pullRequestId GithubPullRequestId
+  joinedChannelId JoinedChannelId
+  messageTs Text
+  -- | Status reaction currently on the message, if any
+  appliedStatus PrStatus Maybe
+  -- | Review reaction currently on the message ('ReviewNone' for none)
+  appliedReview PrReview
+  UniqueLinkedGithubPullRequest pullRequestId joinedChannelId messageTs sql=unique_linked_github_pull_request
 
   createdAt UTCTime MigrationOnly
   updatedAt UTCTime MigrationOnly

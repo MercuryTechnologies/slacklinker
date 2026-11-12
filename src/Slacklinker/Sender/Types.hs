@@ -3,6 +3,7 @@ module Slacklinker.Sender.Types where
 import Database.Persist
 import OpenTelemetry.Context qualified as OTel
 import OpenTelemetry.Context.ThreadLocal qualified as OTel
+import Slacklinker.GitHub.Types (PrRef)
 import Slacklinker.Import
 import Slacklinker.Linear.Types (LinearTicketId)
 import Slacklinker.Models
@@ -83,6 +84,10 @@ data SenderRequest
     Takes the Slack message URL that generated it.
     -}
     BacklinkPlausibleLinearTickets WorkspaceMeta SlackUrlParts JoinedChannelId KnownUserId (NonEmpty LinearTicketId)
+  | -- | Fetch a linked GitHub PR, record the message and react with its state.
+    TrackGithubPr WorkspaceMeta JoinedChannelId Text PrRef
+  | -- | Refetch a tracked PR and update reactions on every message linking it.
+    RefreshGithubPr GithubPullRequestId
   | RequestTerminate
   deriving stock (Show, Generic)
 

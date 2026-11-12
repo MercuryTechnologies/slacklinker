@@ -31,6 +31,7 @@ testAppConfig postgresConnectionString =
     , logLevel = LevelInfo
     , blockedAppIds = []
     , linearCreds = Nothing
+    , githubCreds = Nothing
     , slacklinkerHost = Nothing
     }
   where

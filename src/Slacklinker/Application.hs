@@ -6,6 +6,7 @@ module Slacklinker.Application where
 import Data.Aeson (Value)
 import Servant
 import Slacklinker.App (App, AppM, runAppM)
+import Slacklinker.GitHub.Handler qualified as GitHub
 import Slacklinker.Handler.Authorize (getAuthorizeR, getOauthRedirectR)
 import Slacklinker.Handler.Webhook (postSlackInteractiveWebhookR)
 import Slacklinker.Import
@@ -35,12 +36,14 @@ type Api =
       :> Get '[PlainText] Text
     :<|> "linear"
       :> Linear.Api
+    :<|> "github"
+      :> GitHub.Api
 
 context :: Context '[]
 context = EmptyContext
 
 server :: ServerT Api AppM
-server = aliveH :<|> aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH :<|> Linear.linearH
+server = aliveH :<|> aliveH :<|> webhookH :<|> authorizeH :<|> oauthRedirectH :<|> Linear.linearH :<|> GitHub.githubH
   where
     authorizeH = getAuthorizeR
     oauthRedirectH = getOauthRedirectR

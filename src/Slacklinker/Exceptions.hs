@@ -132,6 +132,22 @@ data LinearRaced = LinearRaced
 instance ExceptionResponse LinearRaced where
   status _ = status400
 
+-- | GitHub integration is not configured
+data GithubDisabled = GithubDisabled
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException GithubDisabled
+
+instance ExceptionResponse GithubDisabled where
+  status _ = status404
+
+-- | GitHub webhook signature did not verify
+data GithubBadSignature = GithubBadSignature
+  deriving stock (Show)
+  deriving (Exception) via DeriveServiceException GithubBadSignature
+
+instance ExceptionResponse GithubBadSignature where
+  status _ = status401
+
 newtype VerificationException = VerificationException SlackVerificationFailed
   deriving newtype (Show)
   deriving (Exception) via DeriveServiceException VerificationException

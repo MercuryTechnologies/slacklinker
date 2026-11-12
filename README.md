@@ -140,6 +140,33 @@ Slacklinker will try linking any Linear ticket identifiers matching a known Line
 However, the list of teams is not updated automatically.
 To update them, you can run `one-off-task update-all-linear-teams` (which should be put in a cron job in a real deployment) or the IM command `update_linear_teams`.
 
+### GitHub PR tracking setup
+
+GitHub PR tracking is optional. When enabled for a channel, Slacklinker reacts
+to GitHub PR links with the PR's status (`:pr-draft:`, `:pr-opened:`,
+`:pr-queued:`, `:pr-merged:`, `:pr-closed:`) and review state
+(`:pr-approved:`, `:pr-requested-changes:`), and keeps them updated via GitHub
+webhooks. Upload custom emoji with those names to your workspace.
+
+Configure the following environment variables:
+
+- `GITHUB_TOKEN` is a token that can read pull requests in your repos (e.g. a
+  fine-grained PAT with read access to pull requests).
+- `GITHUB_WEBHOOK_SECRET` is the secret configured on the GitHub webhooks.
+
+For each repo (or org) to track, add a webhook pointing at
+`https://YOUR-SLACKLINKER/github/webhook` with content type
+`application/json`, the shared secret, and the "Pull requests" and "Pull
+request reviews" events. A repo is tracked once Slacklinker receives a verified
+webhook for it (creating a repo webhook sends one immediately; for org webhooks,
+the repo's first event does).
+
+Then enroll channels (Slacklinker must be a member) in the database:
+
+```sql
+update joined_channels set track_github_prs = true where channel_id = 'C0123456789';
+```
+
 ### Usage
 
 Once you have the application running at some public URL, you need to authorize
