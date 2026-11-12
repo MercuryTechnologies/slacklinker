@@ -25,7 +25,7 @@ prQuery =
 fetchPrState :: (HasApp m, MonadIO m) => GithubToken -> PrRef -> m (Either Text PrState)
 fetchPrState (GithubToken token) ref = do
   manager <- getsApp (.manager)
-  req0 <- liftIO $ parseRequest "https://api.github.com/graphql"
+  baseRequest <- liftIO $ parseRequest "POST https://api.github.com/graphql"
   let requestHeaders =
         [ (hAuthorization, "Bearer " <> encodeUtf8 token)
         , (hUserAgent, "slacklinker")
@@ -33,7 +33,7 @@ fetchPrState (GithubToken token) ref = do
         ]
       body = object ["query" .= prQuery, "variables" .= object ["owner" .= ref.repo.owner, "name" .= ref.repo.name, "number" .= ref.number]]
       requestBody = RequestBodyLBS $ encode body
-      req = req0 {method = "POST", requestHeaders, requestBody}
+      req = baseRequest {requestHeaders, requestBody}
   resp <- liftIO $ httpLbs req manager
   pure $ prStateFromHttp (statusCode $ responseStatus resp) (responseBody resp)
 

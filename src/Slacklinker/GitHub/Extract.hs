@@ -21,16 +21,9 @@ prRefP = do
   number <- string "/pull/" *> decimal
   pure PrRef {repo = mkRepoName owner name, number}
 
-{- | Finds @https://github.com/owner/repo/pull/123@ links in text, deduplicated.
-
->>> extractPrRefs "see <https://github.com/Foo/bar/pull/12|this>"
-[PrRef {repo = RepoName {owner = "foo", name = "bar"}, number = 12}]
--}
 extractPrRefs :: Text -> [PrRef]
 extractPrRefs text = ordNub $ mapMaybe parsePiece candidates
   where
-    -- Refs are lowercased anyway, so lowercase up front to match any host case.
     pieces = T.splitOn "github.com/" (T.toLower text)
-    -- Only accept a piece if the preceding text ends in a URL scheme.
     candidates = [p | (prev, p) <- zip pieces (drop 1 pieces), any (`T.isSuffixOf` prev) ["://", "://www."]]
     parsePiece = rightToMaybe . parseOnly prRefP

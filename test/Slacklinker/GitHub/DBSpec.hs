@@ -2,7 +2,7 @@ module Slacklinker.GitHub.DBSpec where
 
 import Database.Persist
 import Slacklinker.App (runAppM, runDB)
-import Slacklinker.GitHub.DB (knownGithubRepos, linksForPullRequest, registerGithubRepo)
+import Slacklinker.GitHub.DB (linksForPullRequest, registerGithubRepo)
 import Slacklinker.GitHub.Types
 import Slacklinker.Models
 import TestApp
@@ -14,21 +14,17 @@ spec :: Spec
 spec = withApp $ describe "GitHub PR tracking DB" do
   it "round-trips repos, PRs and links" \app -> runAppM app do
     (wsId, _) <- createWorkspace
-    (known, links) <- runDB do
+    (known, unknown, links) <- runDB do
       repoId <- insert GithubRepo {owner = "foo", name = "bar"}
       prId <- insert GithubPullRequest {repoId, number = 7}
       channelId <- insert JoinedChannel {workspaceId = wsId, channelId = ConversationId "C1", name = Nothing, trackGithubPrs = True}
       insert_ LinkedGithubPullRequest {pullRequestId = prId, joinedChannelId = channelId, messageTs = "1.2", appliedStatus = Just PrDraft, appliedReview = ReviewApproved}
-      (,) <$> knownGithubRepos [RepoName "foo" "bar", RepoName "foo" "baz"] <*> linksForPullRequest prId
+      (,,) <$> existsBy (UniqueGithubRepo "foo" "bar") <*> existsBy (UniqueGithubRepo "foo" "baz") <*> linksForPullRequest prId
     liftIO do
-      toList known `shouldBe` [RepoName "foo" "bar"]
+      (known, unknown) `shouldBe` (True, False)
       [(Entity _ l, Entity _ c, _)] <- pure links
       (l.appliedStatus, l.appliedReview, c.channelId) `shouldBe` (Just PrDraft, ReviewApproved, ConversationId "C1")
 
   it "registers a repo idempotently" \app -> runAppM app do
     (a, b) <- runDB $ (,) <$> registerGithubRepo (RepoName "foo" "bar") <*> registerGithubRepo (RepoName "foo" "bar")
     liftIO $ a `shouldBe` b
-
-  it "finds no known repos for no names" \app -> runAppM app do
-    known <- runDB $ insert_ GithubRepo {owner = "foo", name = "bar"} >> knownGithubRepos []
-    liftIO $ known `shouldBe` mempty
