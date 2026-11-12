@@ -79,19 +79,19 @@ changesPrState "pull_request" (Just action) =
 changesPrState "pull_request_review" (Just action) = action `elem` ["submitted", "dismissed"]
 changesPrState _ _ = False
 
-{- | Registers the repo as having webhooks (so its PR links get tracked), and
-queues a refresh of the PR if it's one we track.
--}
+-- | Registers the repo as having webhooks (so its PR links get tracked), and queues a refresh of the PR if it's one we track.
 postGithubWebhookR :: Text -> Text -> ByteString -> AppM Value
 postGithubWebhookR event signature body = do
   creds <- getsApp (.config.githubCreds) >>= (`orThrow` GithubDisabled)
   unless (verifyGithubSignature creds.webhookSecret signature body) $ throwIO GithubBadSignature
   payload :: GithubWebhookPayload <- decodeThrow body
   for_ (payloadRepo payload) \repoName -> do
-    repoId <- runDB $ registerGithubRepo repoName
-    when (changesPrState event payload.action) $ for_ payload.pullRequest \pr -> do
-      mPr <- runDB . P.getBy $ UniqueGithubPullRequest repoId pr.number
-      for_ mPr $ senderEnqueue . RefreshGithubPr . entityKey
+    mPrId <- runDB do
+      repoId <- registerGithubRepo repoName
+      case payload.pullRequest of
+        Just pr | changesPrState event payload.action -> fmap entityKey <$> P.getBy (UniqueGithubPullRequest repoId pr.number)
+        _ -> pure Nothing
+    for_ mPrId $ senderEnqueue . RefreshGithubPr
   pure $ Object mempty
 
 githubH :: Text -> Text -> ByteString -> AppM Value

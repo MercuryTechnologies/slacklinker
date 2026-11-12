@@ -1,47 +1,59 @@
-module Slacklinker.GitHub.APISpec where
+module Slacklinker.GitHub.APISpec (spec) where
 
-import Data.Aeson (Value, encode, object, (.=))
+import Data.Aeson (encode, object, (.=))
 import Data.Either (isLeft)
 import Slacklinker.GitHub.API (prStateFromHttp)
 import Slacklinker.GitHub.Types
 import TestImport
 
-response :: Text -> Bool -> Bool -> Maybe Text -> [Text] -> Value
-response state isDraft isInMergeQueue reviewDecision reviews =
-  object
-    [ "data"
-        .= object
-          [ "repository"
-              .= object
-                [ "pullRequest"
-                    .= object
-                      [ "state" .= state
-                      , "isDraft" .= isDraft
-                      , "isInMergeQueue" .= isInMergeQueue
-                      , "reviewDecision" .= reviewDecision
-                      , "latestOpinionatedReviews" .= object ["nodes" .= [object ["state" .= r] | r <- reviews]]
-                      ]
-                ]
-          ]
-    ]
+data Pr = Pr
+  { state :: Text
+  , isDraft :: Bool
+  , isInMergeQueue :: Bool
+  , reviewDecision :: Maybe Text
+  , reviews :: [Text]
+  }
 
-prStateFromResponse :: Value -> Either Text PrState
-prStateFromResponse = prStateFromHttp 200 . encode
+openPr :: Pr
+openPr = Pr {state = "OPEN", isDraft = False, isInMergeQueue = False, reviewDecision = Nothing, reviews = []}
+
+toResponse :: Pr -> LByteString
+toResponse pr =
+  encode
+    $ object
+      [ "data"
+          .= object
+            [ "repository"
+                .= object
+                  [ "pullRequest"
+                      .= object
+                        [ "state" .= pr.state
+                        , "isDraft" .= pr.isDraft
+                        , "isInMergeQueue" .= pr.isInMergeQueue
+                        , "reviewDecision" .= pr.reviewDecision
+                        , "latestOpinionatedReviews" .= object ["nodes" .= [object ["state" .= r] | r <- pr.reviews]]
+                        ]
+                  ]
+            ]
+      ]
 
 spec :: Spec
 spec = describe "PR state from GraphQL" do
-  let st s r = Right $ PrState s r
-  it "open" $ prStateFromResponse (response "OPEN" False False Nothing []) `shouldBe` st PrOpened ReviewNone
-  it "draft" $ prStateFromResponse (response "OPEN" True False Nothing []) `shouldBe` st PrDraft ReviewNone
-  it "queued" $ prStateFromResponse (response "OPEN" False True (Just "APPROVED") []) `shouldBe` st PrQueued ReviewApproved
-  it "merged" $ prStateFromResponse (response "MERGED" False False (Just "APPROVED") []) `shouldBe` st PrMerged ReviewApproved
-  it "closed" $ prStateFromResponse (response "CLOSED" False False (Just "CHANGES_REQUESTED") []) `shouldBe` st PrClosed ReviewChangesRequested
-  it "review required" $ prStateFromResponse (response "OPEN" False False (Just "REVIEW_REQUIRED") ["APPROVED"]) `shouldBe` st PrOpened ReviewNone
-  it "falls back to reviews without a decision" do
-    prStateFromResponse (response "OPEN" False False Nothing ["APPROVED"]) `shouldBe` st PrOpened ReviewApproved
-    prStateFromResponse (response "OPEN" False False Nothing ["APPROVED", "CHANGES_REQUESTED"]) `shouldBe` st PrOpened ReviewChangesRequested
-  it "fails when not found" do
-    isLeft (prStateFromResponse (object ["data" .= object ["repository" .= (Nothing :: Maybe Value)]])) `shouldBe` True
+  for_
+    [ ("open", openPr, PrState PrOpened ReviewNone)
+    , ("draft", openPr {isDraft = True}, PrState PrDraft ReviewNone)
+    , ("in merge queue", openPr {isInMergeQueue = True, reviewDecision = Just "APPROVED"}, PrState PrQueued ReviewApproved)
+    , ("merged", openPr {state = "MERGED", reviewDecision = Just "APPROVED"}, PrState PrMerged ReviewApproved)
+    , ("closed", openPr {state = "CLOSED", reviewDecision = Just "CHANGES_REQUESTED"}, PrState PrClosed ReviewChangesRequested)
+    , ("review required ignores reviews", openPr {reviewDecision = Just "REVIEW_REQUIRED", reviews = ["APPROVED"]}, PrState PrOpened ReviewNone)
+    , ("approved review without a decision", openPr {reviews = ["APPROVED"]}, PrState PrOpened ReviewApproved)
+    , ("changes requested wins without a decision", openPr {reviews = ["APPROVED", "CHANGES_REQUESTED"]}, PrState PrOpened ReviewChangesRequested)
+    ]
+    \(name, pr, expected) -> it name $ prStateFromHttp 200 (toResponse pr) `shouldBe` Right expected
+
+  it "fails when the PR is missing" do
+    prStateFromHttp 200 "{\"data\":{\"repository\":null}}" `shouldSatisfy` isLeft
+
   it "reports HTTP errors with GitHub's message" do
     prStateFromHttp 401 "{\"message\":\"Bad credentials\"}" `shouldBe` Left "GitHub returned HTTP 401: Bad credentials"
     prStateFromHttp 502 "bad gateway" `shouldBe` Left "GitHub returned HTTP 502: bad gateway"
