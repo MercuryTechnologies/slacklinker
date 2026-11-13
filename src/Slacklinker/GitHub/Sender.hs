@@ -11,7 +11,7 @@ import Slacklinker.Import
 import Slacklinker.Models
 import Slacklinker.Sender.Internal (runSlackEither)
 import Slacklinker.Sender.Types (WorkspaceMeta (..), workspaceMetaFromWorkspaceE)
-import Slacklinker.Slack.Reactions (RemoveReq (..), reactionsRemove)
+import Slacklinker.Slack.Reactions qualified as Reactions
 import Slacklinker.Types (SlackToken)
 import Web.Slack.Common (ResponseSlackError (..), SlackClientError (..))
 import Web.Slack.Conversation (ConversationId (..))
@@ -105,7 +105,7 @@ syncLinkReactions token channel st (Entity linkId linked) = do
 
     removeReaction emoji =
       checked "remove" emoji =<< runSlackEither token \cfg ->
-        void <$> reactionsRemove cfg RemoveReq {channel, timestamp = linked.messageTs, name = Emoji emoji}
+        void <$> Reactions.reactionsRemove cfg Reactions.RemoveReq {removeReqChannel = channel, removeReqTimestamp = linked.messageTs, removeReqName = Emoji emoji}
 
     checked :: (MonadLogger m') => Text -> Text -> Either SlackClientError () -> m' ReactionResult
     checked _ _ (Right ()) = pure ReactionOk
